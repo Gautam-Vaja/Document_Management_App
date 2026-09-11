@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class HeaderScreen extends StatelessWidget {
-  const HeaderScreen({super.key});
+  final String name;
+  const HeaderScreen({super.key, required this.name});
 
   @override
   Widget build(BuildContext context) {
@@ -14,7 +15,7 @@ class HeaderScreen extends StatelessWidget {
         Image.asset(AppImages.appIcon, width: 40, height: 40),
         const SizedBox(width: 10),
         Text(
-          AppStrings.Heading,
+          name,
           style: GoogleFonts.cinzel(fontSize: 20, fontWeight: FontWeight.bold),
         ),
         const Spacer(),

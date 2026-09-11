@@ -30,6 +30,11 @@ class CustomBottomBar extends StatelessWidget {
           context.go('/document');
         }
         break;
+      case 2:
+        if (currentPath != '/favorite') {
+          context.go('/favorite');
+        }
+        break;
       default:
         // Future tabs (Activity, Settings)
         break;

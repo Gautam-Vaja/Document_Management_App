@@ -3,24 +3,19 @@ import 'package:document_management_app/screens/header/header_screen.dart';
 import 'package:document_management_app/widgets/custom_bottom_bar.dart';
 import 'package:flutter/material.dart';
 
-class DocumentScreen extends StatefulWidget {
-  const DocumentScreen({super.key});
+class FavoriteScreen extends StatefulWidget {
+  const FavoriteScreen({super.key});
 
   @override
-  State<DocumentScreen> createState() => _DocumentScreenState();
+  State<FavoriteScreen> createState() => _FavoriteScreenState();
 }
 
-class _DocumentScreenState extends State<DocumentScreen> {
-  int selectedIndex = 1;
-
+class _FavoriteScreenState extends State<FavoriteScreen> {
+  int selectedIndex = 2;
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.grey.shade200,
-        elevation: 0,
-        title: const HeaderScreen(name: AppStrings.documentText),
-      ),
+      appBar: AppBar(title: HeaderScreen(name: AppStrings.favoriteText)),
       bottomNavigationBar: CustomBottomBar(selectedIndex: selectedIndex),
     );
   }

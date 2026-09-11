@@ -1,5 +1,5 @@
 import 'package:document_management_app/core/app_strings.dart';
-import 'package:document_management_app/screens/DocumentScanner/header_screen.dart';
+import 'package:document_management_app/screens/header/header_screen.dart';
 import 'package:document_management_app/widgets/custom_bottom_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -19,7 +19,7 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         backgroundColor: Colors.grey.shade200,
         elevation: 0,
-        title: const HeaderScreen(),
+        title: const HeaderScreen(name: AppStrings.Heading),
       ),
       body: SafeArea(
         child: Padding(
@@ -42,9 +42,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
-      bottomNavigationBar: const CustomBottomBar(
-        selectedIndex: 0,
-      ),
+      bottomNavigationBar: const CustomBottomBar(selectedIndex: 0),
     );
   }
 
