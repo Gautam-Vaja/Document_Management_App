@@ -10,4 +10,7 @@ class AppStrings {
   static const String pdfTOIamge = "PDF or image";
   static const String recentDocuments = "Recent Documents";
   static const String viewAll = "View All";
+
+  // Document Screen Texts
+  static const String documentText = "Documents";
 }

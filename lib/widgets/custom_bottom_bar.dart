@@ -3,36 +3,35 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class CustomBottomBar extends StatelessWidget {
-  final int selectedIndex;
+  final int? selectedIndex;
   final Function(int)? onTap;
   final VoidCallback? onScanTap;
 
   const CustomBottomBar({
     super.key,
-    required this.selectedIndex,
+    this.selectedIndex,
     this.onTap,
     this.onScanTap,
   });
 
   void _handleTap(BuildContext context, int index) {
-    if (onTap != null) {
-      onTap!(index);
-    }
+    onTap?.call(index);
 
-    if (index == selectedIndex) return;
+    final String currentPath = GoRouterState.of(context).uri.path;
 
     switch (index) {
       case 0:
-        context.go('/home');
+        if (currentPath != '/home') {
+          context.go('/home');
+        }
         break;
       case 1:
-        context.go('/document');
+        if (currentPath != '/document') {
+          context.go('/document');
+        }
         break;
-      case 2:
-        context.go('/activity');
-        break;
-      case 3:
-        context.go('/settings');
+      default:
+        // Future tabs (Activity, Settings)
         break;
     }
   }
@@ -47,11 +46,17 @@ class CustomBottomBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final String currentPath = GoRouterState.of(context).uri.path;
+    final int activeIndex =
+        selectedIndex ?? (currentPath == '/document' ? 1 : 0);
+
     return Container(
       height: 78,
       decoration: BoxDecoration(
         color: const Color(0xFFF8F8FC),
-        border: Border(top: BorderSide(color: Colors.grey.withValues(alpha: 0.15))),
+        border: Border(
+          top: BorderSide(color: Colors.grey.withValues(alpha: 0.15)),
+        ),
       ),
       child: Stack(
         clipBehavior: Clip.none,
@@ -59,14 +64,38 @@ class CustomBottomBar extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildItem(context, icon: Icons.home_outlined, label: 'Home', index: 0),
-              _buildItem(context, icon: Icons.folder_outlined, label: 'Docs', index: 1),
+              _buildItem(
+                context,
+                icon: Icons.home_outlined,
+                label: 'Home',
+                index: 0,
+                isSelected: activeIndex == 0,
+              ),
+              _buildItem(
+                context,
+                icon: Icons.folder_outlined,
+                label: 'Docs',
+                index: 1,
+                isSelected: activeIndex == 1,
+              ),
 
-              // Empty space for center floating scan button
+              // Empty space for center button
               const SizedBox(width: 70),
 
-              _buildItem(context, icon: Icons.access_time_outlined, label: 'Activity', index: 2),
-              _buildItem(context, icon: Icons.settings_outlined, label: 'Settings', index: 3),
+              _buildItem(
+                context,
+                icon: Icons.star_border,
+                label: 'Fovorite',
+                index: 2,
+                isSelected: activeIndex == 2,
+              ),
+              _buildItem(
+                context,
+                icon: Icons.settings_outlined,
+                label: 'Settings',
+                index: 3,
+                isSelected: activeIndex == 3,
+              ),
             ],
           ),
           Positioned(
@@ -109,8 +138,8 @@ class CustomBottomBar extends StatelessWidget {
     required IconData icon,
     required String label,
     required int index,
+    required bool isSelected,
   }) {
-    final bool isSelected = selectedIndex == index;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => _handleTap(context, index),
@@ -121,7 +150,9 @@ class CustomBottomBar extends StatelessWidget {
           children: [
             Icon(
               icon,
-              color: isSelected ? const Color(0xFF5046E5) : const Color(0xFF5F6470),
+              color: isSelected
+                  ? const Color(0xFF5046E5)
+                  : const Color(0xFF5F6470),
               size: 28,
             ),
             const SizedBox(height: 4),
@@ -130,7 +161,9 @@ class CustomBottomBar extends StatelessWidget {
               style: GoogleFonts.nunito(
                 fontSize: 12,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                color: isSelected ? const Color(0xFF5046E5) : const Color(0xFF5F6470),
+                color: isSelected
+                    ? const Color(0xFF5046E5)
+                    : const Color(0xFF5F6470),
               ),
             ),
           ],
