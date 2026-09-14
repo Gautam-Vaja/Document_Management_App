@@ -2,6 +2,7 @@ import 'package:document_management_app/screens/DocumentScanner/document_scanner
 import 'package:document_management_app/screens/document/document_screen.dart';
 import 'package:document_management_app/screens/fovorite/favorite_screen.dart';
 import 'package:document_management_app/screens/home/home_screen.dart';
+import 'package:document_management_app/screens/settings/settings_screen.dart';
 import 'package:go_router/go_router.dart';
 
 class AppRouter {
@@ -20,6 +21,10 @@ class AppRouter {
       GoRoute(
         path: '/documentScanner',
         builder: (context, state) => const DocumentScannerScreen(),
+      ),
+      GoRoute(
+        path: '/settings',
+        builder: (context, state) => const SettingsScreen(),
       ),
     ],
   );

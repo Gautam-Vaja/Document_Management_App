@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:document_management_app/screens/DocumentScanner/scanned_preview_screen.dart';
 import 'package:document_management_app/screens/DocumentScanner/scanner_frame_pointer.dart';
 import 'package:flutter/material.dart';
+import 'package:google_mlkit_document_scanner/google_mlkit_document_scanner.dart';
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 
 class DocumentScannerScreen extends StatefulWidget {
@@ -20,7 +23,6 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
   bool _isInitialized = false;
   bool _isCapturing = false;
   bool _flashOn = false;
-  bool _autoScanActive = false;
   bool _showLevelerGrid = false;
   bool _showShutterEffect = false;
   String? _errorMessage;
@@ -40,6 +42,11 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
     )..repeat(reverse: true);
 
     _initializeCamera();
+
+    // Automatically trigger AI auto-capture & auto-crop on launch
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startGoogleDocumentScanner();
+    });
   }
 
   Future<void> _initializeCamera() async {
@@ -86,6 +93,38 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
     }
   }
 
+  Future<void> _startGoogleDocumentScanner() async {
+    final documentScanner = DocumentScanner(
+      options: DocumentScannerOptions(
+        mode: ScannerMode.full,
+        isGalleryImport: true,
+        pageLimit: _selectedMode.startsWith('Batch') ? 10 : 1,
+      ),
+    );
+
+    try {
+      final DocumentScanningResult result = await documentScanner.scanDocument();
+      final images = result.images;
+      if (images != null && images.isNotEmpty && mounted) {
+        for (final imgPath in images) {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ScannedPreviewScreen(
+                imagePath: imgPath,
+                scanMode: _selectedMode,
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('ML Kit Document Scanner error: $e');
+    } finally {
+      documentScanner.close();
+    }
+  }
+
   Future<void> _takePicture() async {
     if (!_isInitialized || _controller == null || _isCapturing) return;
 
@@ -105,6 +144,9 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
     try {
       final XFile image = await _controller!.takePicture();
 
+      // Automatically crop image to the document viewfinder frame
+      final croppedPath = await _cropToViewfinderFrame(image.path);
+
       if (_selectedMode == 'Batch') {
         setState(() {
           _batchCount++;
@@ -114,7 +156,7 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Page $_batchCount captured in Batch mode'),
+              content: Text('Page $_batchCount captured & auto-cropped in Batch mode'),
               duration: const Duration(seconds: 1),
             ),
           );
@@ -133,7 +175,7 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
         context,
         MaterialPageRoute(
           builder: (context) => ScannedPreviewScreen(
-            imagePath: image.path,
+            imagePath: croppedPath,
             scanMode: _selectedMode,
           ),
         ),
@@ -148,6 +190,51 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
           SnackBar(content: Text('Failed to capture document: $e')),
         );
       }
+    }
+  }
+
+  Future<String> _cropToViewfinderFrame(String imagePath) async {
+    try {
+      final bytes = await File(imagePath).readAsBytes();
+      final decoded = img.decodeImage(bytes);
+      if (decoded == null) return imagePath;
+
+      final isId = _selectedMode == 'ID Card';
+      final frameAspect = isId ? (320.0 / 205.0) : (280.0 / 380.0);
+
+      final imgW = decoded.width;
+      final imgH = decoded.height;
+      final imgAspect = imgW / imgH;
+
+      int cropW;
+      int cropH;
+
+      if (imgAspect > frameAspect) {
+        cropH = (imgH * 0.88).round();
+        cropW = (cropH * frameAspect).round();
+      } else {
+        cropW = (imgW * 0.88).round();
+        cropH = (cropW / frameAspect).round();
+      }
+
+      final cropX = ((imgW - cropW) / 2).round().clamp(0, imgW - 10);
+      final cropY = ((imgH - cropH) / 2).round().clamp(0, imgH - 10);
+
+      final cropped = img.copyCrop(
+        decoded,
+        x: cropX,
+        y: cropY,
+        width: cropW,
+        height: cropH,
+      );
+
+      final ext = imagePath.endsWith('.png') ? '.png' : '.jpg';
+      final croppedPath = imagePath.replaceAll(RegExp(r'\.[a-zA-Z0-9]+$'), '_cropped$ext');
+      await File(croppedPath).writeAsBytes(img.encodeJpg(cropped, quality: 93));
+      return croppedPath;
+    } catch (e) {
+      debugPrint('Error auto-cropping to frame: $e');
+      return imagePath;
     }
   }
 
@@ -169,32 +256,6 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
       }
     } catch (e) {
       debugPrint('Image picker error: $e');
-    }
-  }
-
-  void _toggleAutoScan() {
-    setState(() {
-      _autoScanActive = !_autoScanActive;
-    });
-
-    _autoScanTimer?.cancel();
-
-    if (_autoScanActive) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Auto-Scan active: Hold steady over document...'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-
-      _autoScanTimer = Timer(const Duration(seconds: 2), () {
-        if (mounted && _autoScanActive) {
-          _takePicture();
-          setState(() {
-            _autoScanActive = false;
-          });
-        }
-      });
     }
   }
 
@@ -376,48 +437,50 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
         // Document scanning frame with animated laser
         Center(child: _buildScannerFrame()),
 
-        // Status text / Hint
+        // Prominent AI Auto Scan Button
         Positioned(
-          top: 16,
-          left: 0,
-          right: 0,
+          top: 14,
+          left: 16,
+          right: 16,
           child: Center(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.6),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: _autoScanActive
-                      ? const Color(0xFF58F5B0)
-                      : Colors.white.withValues(alpha: 0.2),
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (_autoScanActive) ...[
-                    const SizedBox(
-                      width: 10,
-                      height: 10,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Color(0xFF58F5B0),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: _startGoogleDocumentScanner,
+                borderRadius: BorderRadius.circular(24),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF5046E5), Color(0xFF7C3AED)],
+                    ),
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF5046E5).withValues(alpha: 0.5),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                  Text(
-                    _autoScanActive
-                        ? 'Auto-Scanning • Keep document steady'
-                        : 'Align document inside the frame',
-                    style: TextStyle(
-                      color: _autoScanActive ? const Color(0xFF58F5B0) : Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                    ),
+                    ],
                   ),
-                ],
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.auto_awesome, color: Color(0xFF58F5B0), size: 18),
+                      SizedBox(width: 8),
+                      Text(
+                        'AI Auto-Capture & Auto-Crop',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      SizedBox(width: 6),
+                      Icon(Icons.arrow_forward_ios, color: Colors.white70, size: 12),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
@@ -529,9 +592,9 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
 
               _bottomAction(
                 icon: Icons.auto_awesome,
-                title: _autoScanActive ? 'Stop Auto' : 'Auto Scan',
-                isActive: _autoScanActive,
-                onTap: _toggleAutoScan,
+                title: 'AI Auto Scan',
+                isActive: true,
+                onTap: _startGoogleDocumentScanner,
               ),
             ],
           ),
