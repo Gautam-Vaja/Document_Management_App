@@ -14,6 +14,6 @@ class AppStrings {
   // Document Screen Texts
   static const String documentText = "Documents";
 
-  //Fovorite Screen Texts
-  static const String fovoriteText = "Favorite";
+  // Favorite Screen Texts
+  static const String favoriteText = "Favorite";
 }
