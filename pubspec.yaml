@@ -44,6 +44,8 @@ dependencies:
   provider: ^6.1.1
   image: ^4.1.7
   google_mlkit_document_scanner: ^0.6.1
+  pdf: ^3.13.0
+  share_plus: ^13.3.0
 
 dev_dependencies:
   flutter_test:

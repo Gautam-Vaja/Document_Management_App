@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:document_management_app/model/database_model.dart';
 import 'package:document_management_app/provider/document_provider.dart';
+import 'package:document_management_app/service/pdf_share_service.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -152,6 +153,14 @@ class DocumentPreviewDialog extends StatelessWidget {
                         ),
                       ),
                       IconButton(
+                        icon: const Icon(Icons.share_outlined, color: Colors.white70),
+                        tooltip: 'Share as PDF',
+                        onPressed: () => PdfShareService.shareDocumentAsPdf(
+                          context,
+                          document: currentDoc,
+                        ),
+                      ),
+                      IconButton(
                         icon: Icon(
                           currentDoc.isFavorite
                               ? Icons.star
@@ -247,6 +256,37 @@ class DocumentPreviewDialog extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () => PdfShareService.shareDocumentAsPdf(
+                            context,
+                            document: currentDoc,
+                          ),
+                          icon: const Icon(
+                            Icons.picture_as_pdf_rounded,
+                            color: Colors.white,
+                            size: 19,
+                          ),
+                          label: Text(
+                            'Share as PDF',
+                            style: GoogleFonts.nunito(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                              color: Colors.white,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF5046E5),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            elevation: 0,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
                       Row(
                         children: [
                           Expanded(

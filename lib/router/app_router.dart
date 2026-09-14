@@ -3,6 +3,7 @@ import 'package:document_management_app/screens/document/document_screen.dart';
 import 'package:document_management_app/screens/fovorite/favorite_screen.dart';
 import 'package:document_management_app/screens/home/home_screen.dart';
 import 'package:document_management_app/screens/settings/settings_screen.dart';
+import 'package:document_management_app/screens/splash/splash_screen.dart';
 import 'package:go_router/go_router.dart';
 
 class AppRouter {
@@ -25,6 +26,10 @@ class AppRouter {
       GoRoute(
         path: '/settings',
         builder: (context, state) => const SettingsScreen(),
+      ),
+      GoRoute(
+        path: '/splashScreen',
+        builder: (context, state) => const SplashScreen(),
       ),
     ],
   );

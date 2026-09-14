@@ -1,6 +1,9 @@
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:document_management_app/model/database_model.dart';
 import 'package:document_management_app/provider/document_provider.dart';
 import 'package:document_management_app/screens/DocumentScanner/document_crop_screen.dart';
+import 'package:document_management_app/service/pdf_share_service.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -284,6 +287,79 @@ class _ScannedPreviewScreenState extends State<ScannedPreviewScreen> {
     );
   }
 
+  Future<Uint8List?> _getProcessedImageBytes() async {
+    try {
+      final bytes = await File(_currentImagePath).readAsBytes();
+      var decoded = img.decodeImage(bytes);
+      if (decoded == null) return bytes;
+
+      if (_rotationQuarterTurns != 0) {
+        decoded = img.copyRotate(decoded, angle: 90 * _rotationQuarterTurns);
+      }
+
+      // Apply selected filter to image
+      if (_selectedFilter == DocumentFilter.grayscale) {
+        decoded = img.grayscale(decoded);
+      } else if (_selectedFilter == DocumentFilter.blackAndWhite) {
+        decoded = img.grayscale(decoded);
+        decoded = img.adjustColor(decoded, contrast: 1.8, brightness: 1.1);
+      } else if (_selectedFilter == DocumentFilter.cleanDocument) {
+        decoded = img.adjustColor(decoded, contrast: 1.3, brightness: 1.15);
+      } else if (_selectedFilter == DocumentFilter.enhanced) {
+        decoded = img.adjustColor(decoded, contrast: 1.25, saturation: 1.2);
+      } else if (_selectedFilter == DocumentFilter.highContrast) {
+        decoded = img.adjustColor(decoded, contrast: 1.5);
+      } else if (_selectedFilter == DocumentFilter.inverted) {
+        decoded = img.invert(decoded);
+      } else if (_selectedFilter == DocumentFilter.warmSepia) {
+        decoded = img.sepia(decoded);
+      }
+
+      final ext = _currentImagePath.endsWith('.png') ? '.png' : '.jpg';
+      if (ext == '.png') {
+        return Uint8List.fromList(img.encodePng(decoded));
+      } else {
+        return Uint8List.fromList(img.encodeJpg(decoded, quality: 93));
+      }
+    } catch (e) {
+      debugPrint('Error processing image: $e');
+      return null;
+    }
+  }
+
+  Future<void> _shareAsPdf() async {
+    final now = DateTime.now();
+    final defaultTitle =
+        'Scan_${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}';
+
+    final bytes = await _getProcessedImageBytes();
+    if (!mounted) return;
+
+    if (bytes != null) {
+      await PdfShareService.shareBytesAsPdf(
+        context,
+        imageBytes: bytes,
+        title: defaultTitle,
+      );
+    } else {
+      final file = File(_currentImagePath);
+      if (file.existsSync()) {
+        final iso = now.toIso8601String();
+        await PdfShareService.shareDocumentAsPdf(
+          context,
+          document: DocumentModel(
+            name: defaultTitle,
+            filePath: _currentImagePath,
+            fileType: 'Image',
+            fileSize: file.lengthSync(),
+            createdAt: iso,
+            updatedAt: iso,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _performSave(String title, bool isFavorite) async {
     setState(() {
       _isSaving = true;
@@ -293,44 +369,15 @@ class _ScannedPreviewScreenState extends State<ScannedPreviewScreen> {
 
     // Apply rotation and filter to file bytes before saving
     if (_rotationQuarterTurns != 0 || _selectedFilter != DocumentFilter.original) {
-      try {
-        final bytes = await File(_currentImagePath).readAsBytes();
-        var decoded = img.decodeImage(bytes);
-        if (decoded != null) {
-          if (_rotationQuarterTurns != 0) {
-            decoded = img.copyRotate(decoded, angle: 90 * _rotationQuarterTurns);
-          }
-
-          // Apply selected filter to saved image
-          if (_selectedFilter == DocumentFilter.grayscale) {
-            decoded = img.grayscale(decoded);
-          } else if (_selectedFilter == DocumentFilter.blackAndWhite) {
-            decoded = img.grayscale(decoded);
-            decoded = img.adjustColor(decoded, contrast: 1.8, brightness: 1.1);
-          } else if (_selectedFilter == DocumentFilter.cleanDocument) {
-            decoded = img.adjustColor(decoded, contrast: 1.3, brightness: 1.15);
-          } else if (_selectedFilter == DocumentFilter.enhanced) {
-            decoded = img.adjustColor(decoded, contrast: 1.25, saturation: 1.2);
-          } else if (_selectedFilter == DocumentFilter.highContrast) {
-            decoded = img.adjustColor(decoded, contrast: 1.5);
-          } else if (_selectedFilter == DocumentFilter.inverted) {
-            decoded = img.invert(decoded);
-          }
-
-          final ext = _currentImagePath.endsWith('.png') ? '.png' : '.jpg';
-          final processedPath = _currentImagePath.replaceAll(
-            RegExp(r'\.[a-zA-Z0-9]+$'),
-            '_proc_${DateTime.now().millisecondsSinceEpoch}$ext',
-          );
-          if (ext == '.png') {
-            await File(processedPath).writeAsBytes(img.encodePng(decoded));
-          } else {
-            await File(processedPath).writeAsBytes(img.encodeJpg(decoded, quality: 93));
-          }
-          fileToSave = processedPath;
-        }
-      } catch (e) {
-        debugPrint('Error processing image before save: $e');
+      final processedBytes = await _getProcessedImageBytes();
+      if (processedBytes != null) {
+        final ext = _currentImagePath.endsWith('.png') ? '.png' : '.jpg';
+        final processedPath = _currentImagePath.replaceAll(
+          RegExp(r'\.[a-zA-Z0-9]+$'),
+          '_proc_${DateTime.now().millisecondsSinceEpoch}$ext',
+        );
+        await File(processedPath).writeAsBytes(processedBytes);
+        fileToSave = processedPath;
       }
     }
 
@@ -415,12 +462,8 @@ class _ScannedPreviewScreenState extends State<ScannedPreviewScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.share_outlined, color: Colors.white),
-            tooltip: 'Share',
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Document ready to share')),
-              );
-            },
+            tooltip: 'Share as PDF',
+            onPressed: _shareAsPdf,
           ),
         ],
       ),
@@ -473,6 +516,49 @@ class _ScannedPreviewScreenState extends State<ScannedPreviewScreen> {
                                   key: ValueKey(_currentImagePath),
                                   fit: BoxFit.contain,
                                 ),
+                        ),
+                      ),
+
+                      // Floating Share PDF Button Overlay
+                      Positioned(
+                        top: 10,
+                        left: 10,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: _shareAsPdf,
+                            borderRadius: BorderRadius.circular(20),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1E2438).withValues(alpha: 0.94),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: const Color(0xFF5046E5), width: 1.5),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.45),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.picture_as_pdf, color: Color(0xFF818CF8), size: 16),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    'Share PDF',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         ),
                       ),
 

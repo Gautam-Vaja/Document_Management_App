@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:document_management_app/model/database_model.dart';
 import 'package:document_management_app/provider/document_provider.dart';
+import 'package:document_management_app/service/pdf_share_service.dart';
 import 'package:document_management_app/widgets/document_preview_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -241,7 +242,9 @@ class DocumentCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 onSelected: (val) {
-                  if (val == 'view') {
+                  if (val == 'share_pdf') {
+                    PdfShareService.shareDocumentAsPdf(context, document: document);
+                  } else if (val == 'view') {
                     DocumentPreviewDialog.show(context, document);
                   } else if (val == 'rename') {
                     _showRenameDialog(context);
@@ -250,6 +253,22 @@ class DocumentCard extends StatelessWidget {
                   }
                 },
                 itemBuilder: (ctx) => [
+                  const PopupMenuItem(
+                    value: 'share_pdf',
+                    child: Row(
+                      children: [
+                        Icon(Icons.picture_as_pdf_outlined, size: 18, color: Color(0xFF5046E5)),
+                        SizedBox(width: 10),
+                        Text(
+                          'Share as PDF',
+                          style: TextStyle(
+                            color: Color(0xFF5046E5),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   const PopupMenuItem(
                     value: 'view',
                     child: Row(
