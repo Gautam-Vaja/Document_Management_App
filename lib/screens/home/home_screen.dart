@@ -1,5 +1,7 @@
 import 'package:document_management_app/core/app_strings.dart';
 import 'package:document_management_app/provider/document_provider.dart';
+import 'package:document_management_app/screens/DocumentScanner/document_crop_screen.dart';
+import 'package:document_management_app/screens/DocumentScanner/scanned_preview_screen.dart';
 import 'package:document_management_app/screens/header/header_screen.dart';
 import 'package:document_management_app/widgets/custom_bottom_bar.dart';
 import 'package:document_management_app/widgets/document_card.dart';
@@ -34,167 +36,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (pickedFile == null || !mounted) return;
 
-      final now = DateTime.now();
-      final defaultTitle =
-          'Upload_${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}';
-      final nameController = TextEditingController(text: defaultTitle);
-      bool isFavorite = false;
+      // FIRST show edit and crop screen
+      final croppedPath = await DocumentCropScreen.open(context, pickedFile.path);
+      if (croppedPath == null || !mounted) return;
 
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: const Color(0xFF252B43),
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      // THEN navigate to ScannedPreviewScreen
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ScannedPreviewScreen(
+            imagePath: croppedPath,
+            scanMode: 'Gallery Upload',
+          ),
         ),
-        builder: (ctx) {
-          return StatefulBuilder(
-            builder: (context, setModalState) {
-              return Padding(
-                padding: EdgeInsets.only(
-                  left: 24,
-                  right: 24,
-                  top: 24,
-                  bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Save Uploaded File',
-                          style: GoogleFonts.nunito(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.white70),
-                          onPressed: () => Navigator.pop(ctx),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Document Name',
-                      style: GoogleFonts.nunito(
-                        fontSize: 14,
-                        color: Colors.white70,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: nameController,
-                      autofocus: true,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: InputDecoration(
-                        filled: true,
-                        fillColor: const Color(0xFF171B2D),
-                        prefixIcon: const Icon(
-                          Icons.description,
-                          color: Color(0xFF5046E5),
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
-                        ),
-                        hintText: 'Enter document name',
-                        hintStyle: const TextStyle(color: Colors.white38),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF171B2D),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: SwitchListTile(
-                        title: Text(
-                          'Add to Favorites',
-                          style: GoogleFonts.nunito(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        subtitle: Text(
-                          'Mark this document as favorite immediately',
-                          style: GoogleFonts.nunito(
-                            color: Colors.white54,
-                            fontSize: 12,
-                          ),
-                        ),
-                        secondary: Icon(
-                          isFavorite ? Icons.star : Icons.star_border,
-                          color: isFavorite ? Colors.amber : Colors.white60,
-                        ),
-                        activeThumbColor: const Color(0xFF5046E5),
-                        value: isFavorite,
-                        onChanged: (val) {
-                          setModalState(() {
-                            isFavorite = val;
-                          });
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 52,
-                      child: ElevatedButton.icon(
-                        onPressed: () async {
-                          Navigator.pop(ctx);
-                          final docProvider = context.read<DocumentProvider>();
-                          final messenger = ScaffoldMessenger.of(context);
-                          final doc = await docProvider.saveDocument(
-                            tempFilePath: pickedFile.path,
-                            title: nameController.text.trim(),
-                            fileType: 'Image',
-                            isFavorite: isFavorite,
-                          );
-
-                          if (mounted && doc != null) {
-                            messenger.showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  '${doc.name} saved successfully!',
-                                  style: GoogleFonts.nunito(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                backgroundColor: const Color(0xFF10B981),
-                                behavior: SnackBarBehavior.floating,
-                              ),
-                            );
-                          }
-                        },
-                        icon: const Icon(Icons.check, color: Colors.white),
-                        label: Text(
-                          'Save to Database',
-                          style: GoogleFonts.nunito(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF5046E5),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          );
-        },
       );
     } catch (e) {
       if (mounted) {

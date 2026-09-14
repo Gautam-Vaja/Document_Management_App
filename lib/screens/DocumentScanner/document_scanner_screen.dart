@@ -1,11 +1,10 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:camera/camera.dart';
+import 'package:document_management_app/screens/DocumentScanner/document_crop_screen.dart';
 import 'package:document_management_app/screens/DocumentScanner/scanned_preview_screen.dart';
 import 'package:document_management_app/screens/DocumentScanner/scanner_frame_pointer.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_document_scanner/google_mlkit_document_scanner.dart';
-import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 
 class DocumentScannerScreen extends StatefulWidget {
@@ -144,19 +143,25 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
     try {
       final XFile image = await _controller!.takePicture();
 
-      // Automatically crop image to the document viewfinder frame
-      final croppedPath = await _cropToViewfinderFrame(image.path);
+      if (!mounted) return;
+
+      setState(() {
+        _isCapturing = false;
+      });
+
+      // FIRST show edit & crop screen so user can auto-crop or adjust
+      final croppedPath = await DocumentCropScreen.open(context, image.path);
+      if (croppedPath == null || !mounted) return;
 
       if (_selectedMode == 'Batch') {
         setState(() {
           _batchCount++;
-          _isCapturing = false;
         });
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Page $_batchCount captured & auto-cropped in Batch mode'),
+              content: Text('Page $_batchCount cropped & added to batch'),
               duration: const Duration(seconds: 1),
             ),
           );
@@ -164,13 +169,7 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
         return;
       }
 
-      if (!mounted) return;
-
-      setState(() {
-        _isCapturing = false;
-      });
-
-      // Navigate to ScannedPreviewScreen
+      // Navigate to ScannedPreviewScreen with cropped document
       await Navigator.push(
         context,
         MaterialPageRoute(
@@ -193,66 +192,25 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
     }
   }
 
-  Future<String> _cropToViewfinderFrame(String imagePath) async {
-    try {
-      final bytes = await File(imagePath).readAsBytes();
-      final decoded = img.decodeImage(bytes);
-      if (decoded == null) return imagePath;
-
-      final isId = _selectedMode == 'ID Card';
-      final frameAspect = isId ? (320.0 / 205.0) : (280.0 / 380.0);
-
-      final imgW = decoded.width;
-      final imgH = decoded.height;
-      final imgAspect = imgW / imgH;
-
-      int cropW;
-      int cropH;
-
-      if (imgAspect > frameAspect) {
-        cropH = (imgH * 0.88).round();
-        cropW = (cropH * frameAspect).round();
-      } else {
-        cropW = (imgW * 0.88).round();
-        cropH = (cropW / frameAspect).round();
-      }
-
-      final cropX = ((imgW - cropW) / 2).round().clamp(0, imgW - 10);
-      final cropY = ((imgH - cropH) / 2).round().clamp(0, imgH - 10);
-
-      final cropped = img.copyCrop(
-        decoded,
-        x: cropX,
-        y: cropY,
-        width: cropW,
-        height: cropH,
-      );
-
-      final ext = imagePath.endsWith('.png') ? '.png' : '.jpg';
-      final croppedPath = imagePath.replaceAll(RegExp(r'\.[a-zA-Z0-9]+$'), '_cropped$ext');
-      await File(croppedPath).writeAsBytes(img.encodeJpg(cropped, quality: 93));
-      return croppedPath;
-    } catch (e) {
-      debugPrint('Error auto-cropping to frame: $e');
-      return imagePath;
-    }
-  }
-
   Future<void> _importFromGallery() async {
     try {
       final ImagePicker picker = ImagePicker();
       final XFile? pickedFile = await picker.pickImage(source: ImageSource.gallery);
 
       if (pickedFile != null && mounted) {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ScannedPreviewScreen(
-              imagePath: pickedFile.path,
-              scanMode: 'Gallery Import',
+        // FIRST show edit & crop screen
+        final croppedPath = await DocumentCropScreen.open(context, pickedFile.path);
+        if (croppedPath != null && mounted) {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ScannedPreviewScreen(
+                imagePath: croppedPath,
+                scanMode: 'Gallery Import',
+              ),
             ),
-          ),
-        );
+          );
+        }
       }
     } catch (e) {
       debugPrint('Image picker error: $e');
@@ -306,7 +264,7 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
   Widget _buildTopBar() {
     return Container(
       height: 55,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       color: const Color(0xFF252B43),
       child: Row(
         children: [
@@ -316,13 +274,23 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
               Navigator.pop(context);
             },
           ),
-          const SizedBox(width: 10),
-          _modeButton('Single Page'),
-          const SizedBox(width: 6),
-          _modeButton(_batchCount > 0 ? 'Batch ($_batchCount)' : 'Batch'),
-          const SizedBox(width: 6),
-          _modeButton('ID Card'),
-          const Spacer(),
+          const SizedBox(width: 8),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                children: [
+                  _modeButton('Single Page'),
+                  const SizedBox(width: 6),
+                  _modeButton(_batchCount > 0 ? 'Batch ($_batchCount)' : 'Batch'),
+                  const SizedBox(width: 6),
+                  _modeButton('ID Card'),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
           _circleButton(
             icon: _flashOn ? Icons.flash_on : Icons.flash_off,
             color: _flashOn ? const Color(0xFF58F5B0) : Colors.white,

@@ -25,6 +25,7 @@ class DocumentCropScreen extends StatefulWidget {
 
 class _DocumentCropScreenState extends State<DocumentCropScreen> {
   img.Image? _decodedImage;
+  Uint8List? _previewBytes;
   bool _isLoading = true;
   bool _isProcessing = false;
 
@@ -47,6 +48,7 @@ class _DocumentCropScreenState extends State<DocumentCropScreen> {
       if (mounted) {
         setState(() {
           _decodedImage = decoded;
+          _previewBytes = bytes;
           _isLoading = false;
         });
         // Run initial auto-detection
@@ -62,7 +64,7 @@ class _DocumentCropScreenState extends State<DocumentCropScreen> {
     }
   }
 
-  // Automatic Document Edge Detection Algorithm
+  // Advanced Otsu Threshold & Edge Gradient Document Boundary Detection
   void _autoDetectDocumentEdges() {
     if (_decodedImage == null) return;
 
@@ -70,117 +72,160 @@ class _DocumentCropScreenState extends State<DocumentCropScreen> {
     final w = image.width;
     final h = image.height;
 
-    const sampleW = 120;
-    const sampleH = 120;
+    // Fast sampling grid for precision analysis
+    const sampleW = 140;
+    const sampleH = 140;
     final scaleX = w / sampleW;
     final scaleY = h / sampleH;
 
-    // 1. Calculate perimeter background average luminance (laptop bezels, desk, table)
-    double borderLumSum = 0;
-    int borderCount = 0;
+    // Luminance array and histogram for Otsu thresholding
+    final lumGrid = List.generate(sampleH, (y) => Float64List(sampleW));
+    final histogram = Int32List(256);
 
-    for (int x = 0; x < sampleW; x += 3) {
-      for (final y in [1, 2, sampleH - 3, sampleH - 2]) {
-        final p = image.getPixel((x * scaleX).toInt().clamp(0, w - 1), (y * scaleY).toInt().clamp(0, h - 1));
-        borderLumSum += (0.299 * p.r + 0.587 * p.g + 0.114 * p.b);
-        borderCount++;
+    for (int y = 0; y < sampleH; y++) {
+      final py = (y * scaleY).toInt().clamp(0, h - 1);
+      for (int x = 0; x < sampleW; x++) {
+        final px = (x * scaleX).toInt().clamp(0, w - 1);
+        final p = image.getPixel(px, py);
+        final lum = (0.299 * p.r + 0.587 * p.g + 0.114 * p.b).clamp(0.0, 255.0);
+        lumGrid[y][x] = lum;
+        histogram[lum.toInt()]++;
       }
     }
-    for (int y = 0; y < sampleH; y += 3) {
-      for (final x in [1, 2, sampleW - 3, sampleW - 2]) {
-        final p = image.getPixel((x * scaleX).toInt().clamp(0, w - 1), (y * scaleY).toInt().clamp(0, h - 1));
-        borderLumSum += (0.299 * p.r + 0.587 * p.g + 0.114 * p.b);
-        borderCount++;
+
+    // Otsu's Global Threshold
+    final totalPixels = sampleW * sampleH;
+    double sum = 0;
+    for (int i = 0; i < 256; i++) {
+      sum += i * histogram[i];
+    }
+
+    double sumB = 0;
+    int wB = 0;
+    int wF = 0;
+    double varMax = 0;
+    int otsuThreshold = 128;
+
+    for (int t = 0; t < 256; t++) {
+      wB += histogram[t];
+      if (wB == 0) continue;
+      wF = totalPixels - wB;
+      if (wF == 0) break;
+
+      sumB += t * histogram[t];
+      final mB = sumB / wB;
+      final mF = (sum - sumB) / wF;
+
+      final varBetween = wB.toDouble() * wF.toDouble() * (mB - mF) * (mB - mF);
+      if (varBetween > varMax) {
+        varMax = varBetween;
+        otsuThreshold = t;
       }
+    }
+
+    // Sample the outer border to check background brightness (desk, laptop bezel, screen edge)
+    double borderLumSum = 0;
+    int borderCount = 0;
+    for (int x = 0; x < sampleW; x += 2) {
+      borderLumSum += lumGrid[1][x] + lumGrid[sampleH - 2][x];
+      borderCount += 2;
+    }
+    for (int y = 0; y < sampleH; y += 2) {
+      borderLumSum += lumGrid[y][1] + lumGrid[y][sampleW - 2];
+      borderCount += 2;
     }
     final avgBorderLum = borderCount > 0 ? borderLumSum / borderCount : 128.0;
 
-    // 2. Calculate center area luminance (where the document paper is)
-    double centerLumSum = 0;
-    int centerCount = 0;
-    for (int y = (sampleH * 0.3).toInt(); y < (sampleH * 0.7).toInt(); y += 3) {
-      for (int x = (sampleW * 0.3).toInt(); x < (sampleW * 0.7).toInt(); x += 3) {
-        final p = image.getPixel((x * scaleX).toInt().clamp(0, w - 1), (y * scaleY).toInt().clamp(0, h - 1));
-        centerLumSum += (0.299 * p.r + 0.587 * p.g + 0.114 * p.b);
-        centerCount++;
+    // Is the document paper brighter than the background surface?
+    final isPaperBrighter = avgBorderLum < otsuThreshold;
+
+    // Binary mask of document paper pixels
+    final paperMask = List.generate(
+      sampleH,
+      (y) => List<bool>.filled(sampleW, false),
+    );
+    for (int y = 0; y < sampleH; y++) {
+      for (int x = 0; x < sampleW; x++) {
+        paperMask[y][x] = isPaperBrighter
+            ? (lumGrid[y][x] >= otsuThreshold)
+            : (lumGrid[y][x] <= otsuThreshold);
       }
     }
-    final avgCenterLum = centerCount > 0 ? centerLumSum / centerCount : 128.0;
 
-    final isPaperBrighter = avgCenterLum >= avgBorderLum;
-    final delta = (avgCenterLum - avgBorderLum).abs();
-    final threshold = isPaperBrighter
-        ? avgBorderLum + (delta > 20 ? delta * 0.35 : 18.0)
-        : avgBorderLum - (delta > 20 ? delta * 0.35 : 18.0);
-
-    // 3. Scan inward from 4 sides looking for paper boundary
-    int left = 0;
-    int right = sampleW - 1;
-    int top = 0;
-    int bottom = sampleH - 1;
-
-    // Inward from left
-    for (int x = 2; x < (sampleW * 0.45).toInt(); x++) {
-      int matching = 0;
-      for (int y = (sampleH * 0.2).toInt(); y < (sampleH * 0.8).toInt(); y += 2) {
-        final p = image.getPixel((x * scaleX).toInt().clamp(0, w - 1), (y * scaleY).toInt().clamp(0, h - 1));
-        final lum = 0.299 * p.r + 0.587 * p.g + 0.114 * p.b;
-        if (isPaperBrighter ? lum >= threshold : lum <= threshold) matching++;
+    // Horizontal & vertical projections (density of paper pixels)
+    final colDensity = List<double>.filled(sampleW, 0.0);
+    for (int x = 0; x < sampleW; x++) {
+      int count = 0;
+      for (int y = 0; y < sampleH; y++) {
+        if (paperMask[y][x]) count++;
       }
-      if (matching > (sampleH * 0.6) / 4) {
+      colDensity[x] = count / sampleH;
+    }
+
+    final rowDensity = List<double>.filled(sampleH, 0.0);
+    for (int y = 0; y < sampleH; y++) {
+      int count = 0;
+      for (int x = 0; x < sampleW; x++) {
+        if (paperMask[y][x]) count++;
+      }
+      rowDensity[y] = count / sampleW;
+    }
+
+    // Compute gradient energy transitions
+    final gradX = List<double>.filled(sampleW, 0.0);
+    for (int x = 1; x < sampleW - 1; x++) {
+      gradX[x] = (colDensity[x + 1] - colDensity[x - 1]).abs();
+    }
+
+    final gradY = List<double>.filled(sampleH, 0.0);
+    for (int y = 1; y < sampleH - 1; y++) {
+      gradY[y] = (rowDensity[y + 1] - rowDensity[y - 1]).abs();
+    }
+
+    // Find Left boundary
+    const densityThreshold = 0.22;
+    int left = 0;
+    for (int x = 2; x < (sampleW * 0.48).toInt(); x++) {
+      if (colDensity[x] >= densityThreshold || gradX[x] > 0.06) {
         left = x;
         break;
       }
     }
 
-    // Inward from right
-    for (int x = sampleW - 3; x > (sampleW * 0.55).toInt(); x--) {
-      int matching = 0;
-      for (int y = (sampleH * 0.2).toInt(); y < (sampleH * 0.8).toInt(); y += 2) {
-        final p = image.getPixel((x * scaleX).toInt().clamp(0, w - 1), (y * scaleY).toInt().clamp(0, h - 1));
-        final lum = 0.299 * p.r + 0.587 * p.g + 0.114 * p.b;
-        if (isPaperBrighter ? lum >= threshold : lum <= threshold) matching++;
-      }
-      if (matching > (sampleH * 0.6) / 4) {
+    // Find Right boundary
+    int right = sampleW - 1;
+    for (int x = sampleW - 3; x > (sampleW * 0.52).toInt(); x--) {
+      if (colDensity[x] >= densityThreshold || gradX[x] > 0.06) {
         right = x;
         break;
       }
     }
 
-    // Inward from top
-    for (int y = 2; y < (sampleH * 0.45).toInt(); y++) {
-      int matching = 0;
-      for (int x = (sampleW * 0.2).toInt(); x < (sampleW * 0.8).toInt(); x += 2) {
-        final p = image.getPixel((x * scaleX).toInt().clamp(0, w - 1), (y * scaleY).toInt().clamp(0, h - 1));
-        final lum = 0.299 * p.r + 0.587 * p.g + 0.114 * p.b;
-        if (isPaperBrighter ? lum >= threshold : lum <= threshold) matching++;
-      }
-      if (matching > (sampleW * 0.6) / 4) {
+    // Find Top boundary
+    int top = 0;
+    for (int y = 2; y < (sampleH * 0.48).toInt(); y++) {
+      if (rowDensity[y] >= densityThreshold || gradY[y] > 0.06) {
         top = y;
         break;
       }
     }
 
-    // Inward from bottom
-    for (int y = sampleH - 3; y > (sampleH * 0.55).toInt(); y--) {
-      int matching = 0;
-      for (int x = (sampleW * 0.2).toInt(); x < (sampleW * 0.8).toInt(); x += 2) {
-        final p = image.getPixel((x * scaleX).toInt().clamp(0, w - 1), (y * scaleY).toInt().clamp(0, h - 1));
-        final lum = 0.299 * p.r + 0.587 * p.g + 0.114 * p.b;
-        if (isPaperBrighter ? lum >= threshold : lum <= threshold) matching++;
-      }
-      if (matching > (sampleW * 0.6) / 4) {
+    // Find Bottom boundary
+    int bottom = sampleH - 1;
+    for (int y = sampleH - 3; y > (sampleH * 0.52).toInt(); y--) {
+      if (rowDensity[y] >= densityThreshold || gradY[y] > 0.06) {
         bottom = y;
         break;
       }
     }
 
-    double normL = (left / sampleW).clamp(0.02, 0.40);
-    double normT = (top / sampleH).clamp(0.02, 0.40);
-    double normR = (right / sampleW).clamp(0.60, 0.98);
-    double normB = (bottom / sampleH).clamp(0.60, 0.98);
+    // Safety margin of 1.5% so document boundaries and text are never cut
+    double normL = (left / sampleW - 0.015).clamp(0.02, 0.45);
+    double normT = (top / sampleH - 0.015).clamp(0.02, 0.45);
+    double normR = (right / sampleW + 0.015).clamp(0.55, 0.98);
+    double normB = (bottom / sampleH + 0.015).clamp(0.55, 0.98);
 
-    if (normR <= normL + 0.2 || normB <= normT + 0.2) {
+    if ((normR - normL) < 0.25 || (normB - normT) < 0.25) {
       normL = 0.06;
       normT = 0.06;
       normR = 0.94;
@@ -190,6 +235,31 @@ class _DocumentCropScreenState extends State<DocumentCropScreen> {
     setState(() {
       _cropRect = Rect.fromLTRB(normL, normT, normR, normB);
     });
+  }
+
+  void _rotateImage(bool clockwise) {
+    if (_decodedImage == null || _isProcessing) return;
+
+    setState(() {
+      _isProcessing = true;
+    });
+
+    try {
+      final angle = clockwise ? 90 : -90;
+      final rotated = img.copyRotate(_decodedImage!, angle: angle);
+      final encoded = Uint8List.fromList(img.encodeJpg(rotated, quality: 90));
+      setState(() {
+        _decodedImage = rotated;
+        _previewBytes = encoded;
+        _isProcessing = false;
+      });
+      _autoDetectDocumentEdges();
+    } catch (e) {
+      debugPrint('Rotate error in crop screen: $e');
+      setState(() {
+        _isProcessing = false;
+      });
+    }
   }
 
   void _setPresetAspect(double? aspect) {
@@ -273,9 +343,9 @@ class _DocumentCropScreenState extends State<DocumentCropScreen> {
         setState(() {
           _isProcessing = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to crop: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to crop: $e')));
       }
     }
   }
@@ -292,7 +362,7 @@ class _DocumentCropScreenState extends State<DocumentCropScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          'Crop Document',
+          'Edit & Crop Document',
           style: GoogleFonts.nunito(
             fontSize: 18,
             fontWeight: FontWeight.bold,
@@ -300,9 +370,23 @@ class _DocumentCropScreenState extends State<DocumentCropScreen> {
           ),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.rotate_left, color: Colors.white70),
+            tooltip: 'Rotate Left',
+            onPressed: () => _rotateImage(false),
+          ),
+          IconButton(
+            icon: const Icon(Icons.rotate_right, color: Colors.white70),
+            tooltip: 'Rotate Right',
+            onPressed: () => _rotateImage(true),
+          ),
           TextButton.icon(
             onPressed: _autoDetectDocumentEdges,
-            icon: const Icon(Icons.auto_awesome, color: Color(0xFF58F5B0), size: 18),
+            icon: const Icon(
+              Icons.auto_awesome,
+              color: Color(0xFF58F5B0),
+              size: 18,
+            ),
             label: const Text(
               'Auto Detect',
               style: TextStyle(
@@ -321,7 +405,9 @@ class _DocumentCropScreenState extends State<DocumentCropScreen> {
             Expanded(
               child: _isLoading
                   ? const Center(
-                      child: CircularProgressIndicator(color: Color(0xFF5046E5)),
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF5046E5),
+                      ),
                     )
                   : LayoutBuilder(
                       builder: (context, constraints) {
@@ -330,7 +416,7 @@ class _DocumentCropScreenState extends State<DocumentCropScreen> {
                     ),
             ),
 
-            // Bottom toolbar
+            // Bottom toolbar with presets and action buttons
             _buildBottomBar(),
           ],
         ),
@@ -341,7 +427,10 @@ class _DocumentCropScreenState extends State<DocumentCropScreen> {
   Widget _buildCropArea(BoxConstraints constraints) {
     if (_decodedImage == null) {
       return const Center(
-        child: Text('Cannot load image', style: TextStyle(color: Colors.white70)),
+        child: Text(
+          'Cannot load image',
+          style: TextStyle(color: Colors.white70),
+        ),
       );
     }
 
@@ -366,20 +455,27 @@ class _DocumentCropScreenState extends State<DocumentCropScreen> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Image
-            Image.file(
-              File(widget.imagePath),
-              fit: BoxFit.fill,
-            ),
+            // Rotated or original Image
+            _previewBytes != null
+                ? Image.memory(_previewBytes!, fit: BoxFit.fill)
+                : Image.file(File(widget.imagePath), fit: BoxFit.fill),
 
-            // Dark Overlay & Crop Frame
+            // Dark Overlay & Interactive Crop Frame
             Positioned.fill(
               child: GestureDetector(
                 onPanStart: (details) {
-                  _handlePanStart(details.localPosition, renderedWidth, renderedHeight);
+                  _handlePanStart(
+                    details.localPosition,
+                    renderedWidth,
+                    renderedHeight,
+                  );
                 },
                 onPanUpdate: (details) {
-                  _handlePanUpdate(details.localPosition, renderedWidth, renderedHeight);
+                  _handlePanUpdate(
+                    details.localPosition,
+                    renderedWidth,
+                    renderedHeight,
+                  );
                 },
                 onPanEnd: (_) {
                   _activeHandle = null;
@@ -507,13 +603,36 @@ class _DocumentCropScreenState extends State<DocumentCropScreen> {
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
-                _presetButton('Auto Detect', Icons.auto_awesome, _autoDetectDocumentEdges, isHighlight: true),
+                _presetButton(
+                  'Auto Detect',
+                  Icons.auto_awesome,
+                  _autoDetectDocumentEdges,
+                  isHighlight: true,
+                ),
                 const SizedBox(width: 8),
-                _presetButton('A4 Document', Icons.article_outlined, () => _setPresetAspect(1 / 1.414)),
+                _presetButton(
+                  'A4 Document',
+                  Icons.article_outlined,
+                  () => _setPresetAspect(1 / 1.414),
+                ),
                 const SizedBox(width: 8),
-                _presetButton('ID Card', Icons.badge_outlined, () => _setPresetAspect(320 / 205)),
+                _presetButton(
+                  'US Letter',
+                  Icons.description_outlined,
+                  () => _setPresetAspect(8.5 / 11),
+                ),
                 const SizedBox(width: 8),
-                _presetButton('Reset Full', Icons.fullscreen, () => _setPresetAspect(null)),
+                _presetButton(
+                  'ID Card',
+                  Icons.badge_outlined,
+                  () => _setPresetAspect(320 / 205),
+                ),
+                const SizedBox(width: 8),
+                _presetButton(
+                  'Reset Full',
+                  Icons.fullscreen,
+                  () => _setPresetAspect(null),
+                ),
               ],
             ),
           ),
@@ -528,13 +647,19 @@ class _DocumentCropScreenState extends State<DocumentCropScreen> {
               OutlinedButton.icon(
                 onPressed: () => Navigator.pop(context),
                 icon: const Icon(Icons.close, color: Colors.white70, size: 18),
-                label: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+                label: const Text(
+                  'Cancel',
+                  style: TextStyle(color: Colors.white70),
+                ),
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: Color(0xFF3A4058)),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                 ),
               ),
 
@@ -578,7 +703,12 @@ class _DocumentCropScreenState extends State<DocumentCropScreen> {
     );
   }
 
-  Widget _presetButton(String label, IconData icon, VoidCallback onTap, {bool isHighlight = false}) {
+  Widget _presetButton(
+    String label,
+    IconData icon,
+    VoidCallback onTap, {
+    bool isHighlight = false,
+  }) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -587,10 +717,14 @@ class _DocumentCropScreenState extends State<DocumentCropScreen> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: isHighlight ? const Color(0xFF5046E5).withValues(alpha: 0.3) : const Color(0xFF252B43),
+            color: isHighlight
+                ? const Color(0xFF5046E5).withValues(alpha: 0.3)
+                : const Color(0xFF252B43),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: isHighlight ? const Color(0xFF58F5B0) : const Color(0xFF3A4058),
+              color: isHighlight
+                  ? const Color(0xFF58F5B0)
+                  : const Color(0xFF3A4058),
             ),
           ),
           child: Row(
@@ -667,10 +801,26 @@ class _CropOverlayPainter extends CustomPainter {
     final thirdW = rect.width / 3;
     final thirdH = rect.height / 3;
 
-    canvas.drawLine(Offset(rect.left + thirdW, rect.top), Offset(rect.left + thirdW, rect.bottom), gridPaint);
-    canvas.drawLine(Offset(rect.left + 2 * thirdW, rect.top), Offset(rect.left + 2 * thirdW, rect.bottom), gridPaint);
-    canvas.drawLine(Offset(rect.left, rect.top + thirdH), Offset(rect.right, rect.top + thirdH), gridPaint);
-    canvas.drawLine(Offset(rect.left, rect.top + 2 * thirdH), Offset(rect.right, rect.top + 2 * thirdH), gridPaint);
+    canvas.drawLine(
+      Offset(rect.left + thirdW, rect.top),
+      Offset(rect.left + thirdW, rect.bottom),
+      gridPaint,
+    );
+    canvas.drawLine(
+      Offset(rect.left + 2 * thirdW, rect.top),
+      Offset(rect.left + 2 * thirdW, rect.bottom),
+      gridPaint,
+    );
+    canvas.drawLine(
+      Offset(rect.left, rect.top + thirdH),
+      Offset(rect.right, rect.top + thirdH),
+      gridPaint,
+    );
+    canvas.drawLine(
+      Offset(rect.left, rect.top + 2 * thirdH),
+      Offset(rect.right, rect.top + 2 * thirdH),
+      gridPaint,
+    );
 
     // Draw 4 corner handles
     final cornerPaint = Paint()
@@ -699,14 +849,22 @@ class _CropOverlayPainter extends CustomPainter {
     // Top and bottom edge handles
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(rect.center.dx, rect.top), width: 24, height: 5),
+        Rect.fromCenter(
+          center: Offset(rect.center.dx, rect.top),
+          width: 26,
+          height: 5,
+        ),
         const Radius.circular(3),
       ),
       edgePaint,
     );
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(rect.center.dx, rect.bottom), width: 24, height: 5),
+        Rect.fromCenter(
+          center: Offset(rect.center.dx, rect.bottom),
+          width: 26,
+          height: 5,
+        ),
         const Radius.circular(3),
       ),
       edgePaint,
@@ -714,14 +872,22 @@ class _CropOverlayPainter extends CustomPainter {
     // Left and right edge handles
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(rect.left, rect.center.dy), width: 5, height: 24),
+        Rect.fromCenter(
+          center: Offset(rect.left, rect.center.dy),
+          width: 5,
+          height: 26,
+        ),
         const Radius.circular(3),
       ),
       edgePaint,
     );
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(rect.right, rect.center.dy), width: 5, height: 24),
+        Rect.fromCenter(
+          center: Offset(rect.right, rect.center.dy),
+          width: 5,
+          height: 26,
+        ),
         const Radius.circular(3),
       ),
       edgePaint,

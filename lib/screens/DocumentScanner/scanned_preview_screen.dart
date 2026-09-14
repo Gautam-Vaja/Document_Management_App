@@ -7,7 +7,16 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image/image.dart' as img;
 import 'package:provider/provider.dart';
 
-enum DocumentFilter { original, enhanced, blackAndWhite, grayscale }
+enum DocumentFilter {
+  enhanced,
+  cleanDocument,
+  blackAndWhite,
+  grayscale,
+  highContrast,
+  original,
+  warmSepia,
+  inverted,
+}
 
 class ScannedPreviewScreen extends StatefulWidget {
   final String imagePath;
@@ -66,26 +75,68 @@ class _ScannedPreviewScreenState extends State<ScannedPreviewScreen> {
     switch (filter) {
       case DocumentFilter.original:
         return null;
+
+      case DocumentFilter.enhanced:
+        // Magic Color: boosts contrast and text sharpness
+        return const ColorFilter.matrix(<double>[
+          1.25, 0,    0,    0, -12,
+          0,    1.25, 0,    0, -12,
+          0,    0,    1.25, 0, -12,
+          0,    0,    0,    1, 0,
+        ]);
+
+      case DocumentFilter.cleanDocument:
+        // Clean White Paper: lifts background to white, darkens text
+        return const ColorFilter.matrix(<double>[
+          1.35, 0,    0,    0, 18,
+          0,    1.35, 0,    0, 18,
+          0,    0,    1.35, 0, 18,
+          0,    0,    0,    1, 0,
+        ]);
+
+      case DocumentFilter.blackAndWhite:
+        // Crisp binary B&W
+        return const ColorFilter.matrix(<double>[
+          1.8, 1.8, 1.8, 0, -210,
+          1.8, 1.8, 1.8, 0, -210,
+          1.8, 1.8, 1.8, 0, -210,
+          0,   0,   0,   1, 0,
+        ]);
+
       case DocumentFilter.grayscale:
+        // Smooth 256 tone grayscale
         return const ColorFilter.matrix(<double>[
           0.2126, 0.7152, 0.0722, 0, 0,
           0.2126, 0.7152, 0.0722, 0, 0,
           0.2126, 0.7152, 0.0722, 0, 0,
           0,      0,      0,      1, 0,
         ]);
-      case DocumentFilter.blackAndWhite:
+
+      case DocumentFilter.highContrast:
+        // Sharp high contrast for faint pencil or receipt ink
         return const ColorFilter.matrix(<double>[
-          1.5, 1.5, 1.5, 0, -160,
-          1.5, 1.5, 1.5, 0, -160,
-          1.5, 1.5, 1.5, 0, -160,
+          1.6, 0,   0,   0, -35,
+          0,   1.6, 0,   0, -35,
+          0,   0,   1.6, 0, -35,
           0,   0,   0,   1, 0,
         ]);
-      case DocumentFilter.enhanced:
+
+      case DocumentFilter.warmSepia:
+        // Warm paper tint for comfortable reading
         return const ColorFilter.matrix(<double>[
-          1.15, 0,    0,    0, -10,
-          0,    1.15, 0,    0, -10,
-          0,    0,    1.15, 0, -10,
-          0,    0,    0,    1, 0,
+          0.393, 0.769, 0.189, 0, 10,
+          0.349, 0.686, 0.168, 0, 5,
+          0.272, 0.534, 0.131, 0, 0,
+          0,     0,     0,     1, 0,
+        ]);
+
+      case DocumentFilter.inverted:
+        // Inverted Dark Mode
+        return const ColorFilter.matrix(<double>[
+          -1,  0,  0, 0, 255,
+           0, -1,  0, 0, 255,
+           0,  0, -1, 0, 255,
+           0,  0,  0, 1, 0,
         ]);
     }
   }
@@ -239,26 +290,47 @@ class _ScannedPreviewScreenState extends State<ScannedPreviewScreen> {
     });
 
     String fileToSave = _currentImagePath;
-    if (_rotationQuarterTurns != 0) {
+
+    // Apply rotation and filter to file bytes before saving
+    if (_rotationQuarterTurns != 0 || _selectedFilter != DocumentFilter.original) {
       try {
         final bytes = await File(_currentImagePath).readAsBytes();
-        final decoded = img.decodeImage(bytes);
+        var decoded = img.decodeImage(bytes);
         if (decoded != null) {
-          final rotated = img.copyRotate(decoded, angle: 90 * _rotationQuarterTurns);
+          if (_rotationQuarterTurns != 0) {
+            decoded = img.copyRotate(decoded, angle: 90 * _rotationQuarterTurns);
+          }
+
+          // Apply selected filter to saved image
+          if (_selectedFilter == DocumentFilter.grayscale) {
+            decoded = img.grayscale(decoded);
+          } else if (_selectedFilter == DocumentFilter.blackAndWhite) {
+            decoded = img.grayscale(decoded);
+            decoded = img.adjustColor(decoded, contrast: 1.8, brightness: 1.1);
+          } else if (_selectedFilter == DocumentFilter.cleanDocument) {
+            decoded = img.adjustColor(decoded, contrast: 1.3, brightness: 1.15);
+          } else if (_selectedFilter == DocumentFilter.enhanced) {
+            decoded = img.adjustColor(decoded, contrast: 1.25, saturation: 1.2);
+          } else if (_selectedFilter == DocumentFilter.highContrast) {
+            decoded = img.adjustColor(decoded, contrast: 1.5);
+          } else if (_selectedFilter == DocumentFilter.inverted) {
+            decoded = img.invert(decoded);
+          }
+
           final ext = _currentImagePath.endsWith('.png') ? '.png' : '.jpg';
-          final rotatedPath = _currentImagePath.replaceAll(
+          final processedPath = _currentImagePath.replaceAll(
             RegExp(r'\.[a-zA-Z0-9]+$'),
-            '_rot_${DateTime.now().millisecondsSinceEpoch}$ext',
+            '_proc_${DateTime.now().millisecondsSinceEpoch}$ext',
           );
           if (ext == '.png') {
-            await File(rotatedPath).writeAsBytes(img.encodePng(rotated));
+            await File(processedPath).writeAsBytes(img.encodePng(decoded));
           } else {
-            await File(rotatedPath).writeAsBytes(img.encodeJpg(rotated, quality: 93));
+            await File(processedPath).writeAsBytes(img.encodeJpg(decoded, quality: 93));
           }
-          fileToSave = rotatedPath;
+          fileToSave = processedPath;
         }
       } catch (e) {
-        debugPrint('Error rotating before save: $e');
+        debugPrint('Error processing image before save: $e');
       }
     }
 
@@ -323,7 +395,7 @@ class _ScannedPreviewScreenState extends State<ScannedPreviewScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          'Scanned Document',
+          'Document Preview',
           style: GoogleFonts.nunito(
             fontSize: 18,
             fontWeight: FontWeight.bold,
@@ -333,7 +405,7 @@ class _ScannedPreviewScreenState extends State<ScannedPreviewScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.crop, color: Colors.white),
-            tooltip: 'Crop / Auto-Detect',
+            tooltip: 'Crop / Edit',
             onPressed: _cropImage,
           ),
           IconButton(
@@ -352,20 +424,30 @@ class _ScannedPreviewScreenState extends State<ScannedPreviewScreen> {
           ),
         ],
       ),
+      // Fully vertically scrollable body
       body: SafeArea(
-        child: Column(
-          children: [
-            // Image Preview Area
-            Expanded(
-              child: Center(
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 12),
+
+              // Image Preview Area with fixed height & crop overlay button
+              Center(
                 child: Padding(
-                  padding: const EdgeInsets.all(16.0),
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
                       Container(
+                        constraints: BoxConstraints(
+                          maxHeight: (MediaQuery.of(context).size.height * 0.54).clamp(260.0, 520.0),
+                          maxWidth: double.infinity,
+                        ),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(16),
+                          color: const Color(0xFF1F2438),
                           boxShadow: [
                             BoxShadow(
                               color: Colors.black.withValues(alpha: 0.5),
@@ -396,8 +478,8 @@ class _ScannedPreviewScreenState extends State<ScannedPreviewScreen> {
 
                       // Floating Crop Button Overlay
                       Positioned(
-                        top: 12,
-                        right: 12,
+                        top: 10,
+                        right: 10,
                         child: Material(
                           color: Colors.transparent,
                           child: InkWell(
@@ -406,12 +488,12 @@ class _ScannedPreviewScreenState extends State<ScannedPreviewScreen> {
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF1E2438).withValues(alpha: 0.92),
+                                color: const Color(0xFF1E2438).withValues(alpha: 0.94),
                                 borderRadius: BorderRadius.circular(20),
                                 border: Border.all(color: const Color(0xFF5046E5), width: 1.5),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.4),
+                                    color: Colors.black.withValues(alpha: 0.45),
                                     blurRadius: 8,
                                     offset: const Offset(0, 2),
                                   ),
@@ -423,7 +505,7 @@ class _ScannedPreviewScreenState extends State<ScannedPreviewScreen> {
                                   Icon(Icons.crop, color: Color(0xFF58F5B0), size: 16),
                                   SizedBox(width: 6),
                                   Text(
-                                    'Auto-Crop / Adjust',
+                                    'Edit & Crop',
                                     style: TextStyle(
                                       color: Colors.white,
                                       fontSize: 12,
@@ -440,93 +522,135 @@ class _ScannedPreviewScreenState extends State<ScannedPreviewScreen> {
                   ),
                 ),
               ),
-            ),
 
-            // Filter Options
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              color: const Color(0xFF1F2438),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _filterButton('Enhanced', DocumentFilter.enhanced, Icons.auto_awesome),
-                  _filterButton('B&W', DocumentFilter.blackAndWhite, Icons.contrast),
-                  _filterButton('Grayscale', DocumentFilter.grayscale, Icons.filter_b_and_w),
-                  _filterButton('Original', DocumentFilter.original, Icons.image_outlined),
-                ],
-              ),
-            ),
+              const SizedBox(height: 16),
 
-            // Bottom Actions Bar
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              color: const Color(0xFF252B43),
-              child: Row(
-                children: [
-                  // Retake Button
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.refresh, color: Colors.white70),
-                      label: Text(
-                        'Retake',
-                        style: GoogleFonts.nunito(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
+              // Filter Section Title
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                child: Row(
+                  children: [
+                    const Icon(Icons.auto_awesome, color: Color(0xFF58F5B0), size: 16),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Document Color & Enhancement Filters',
+                      style: GoogleFonts.nunito(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white70,
                       ),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Color(0xFF3A4058)),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 8),
+
+              // Horizontally Scrollable Filter Options Strip
+              Container(
+                color: const Color(0xFF1F2438),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      _filterCard('Magic Color', DocumentFilter.enhanced, Icons.auto_awesome, const Color(0xFF5046E5)),
+                      const SizedBox(width: 10),
+                      _filterCard('White Paper', DocumentFilter.cleanDocument, Icons.description, const Color(0xFF10B981)),
+                      const SizedBox(width: 10),
+                      _filterCard('B&W Crisp', DocumentFilter.blackAndWhite, Icons.contrast, const Color(0xFF6366F1)),
+                      const SizedBox(width: 10),
+                      _filterCard('Grayscale', DocumentFilter.grayscale, Icons.filter_b_and_w, const Color(0xFF64748B)),
+                      const SizedBox(width: 10),
+                      _filterCard('Sharp Contrast', DocumentFilter.highContrast, Icons.tonality, const Color(0xFFF59E0B)),
+                      const SizedBox(width: 10),
+                      _filterCard('Original', DocumentFilter.original, Icons.image_outlined, const Color(0xFF3B82F6)),
+                      const SizedBox(width: 10),
+                      _filterCard('Warm Paper', DocumentFilter.warmSepia, Icons.wb_sunny_outlined, const Color(0xFFD97706)),
+                      const SizedBox(width: 10),
+                      _filterCard('Dark Invert', DocumentFilter.inverted, Icons.nightlight_round, const Color(0xFF8B5CF6)),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // Bottom Actions Bar
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                color: const Color(0xFF252B43),
+                child: Row(
+                  children: [
+                    // Retake / Back Button
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.refresh, color: Colors.white70),
+                        label: Text(
+                          'Retake',
+                          style: GoogleFonts.nunito(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFF3A4058)),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                       ),
                     ),
-                  ),
 
-                  const SizedBox(width: 14),
+                    const SizedBox(width: 14),
 
-                  // Save Button
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: _isSaving ? null : _saveDocument,
-                      icon: _isSaving
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.check, color: Colors.white),
-                      label: Text(
-                        _isSaving ? 'Saving...' : 'Save Document',
-                        style: GoogleFonts.nunito(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
+                    // Save Button
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _isSaving ? null : _saveDocument,
+                        icon: _isSaving
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.check, color: Colors.white),
+                        label: Text(
+                          _isSaving ? 'Saving...' : 'Save Document',
+                          style: GoogleFonts.nunito(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF5046E5),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF5046E5),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+
+              const SizedBox(height: 24),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _filterButton(String title, DocumentFilter filter, IconData icon) {
+  Widget _filterCard(String title, DocumentFilter filter, IconData icon, Color accentColor) {
     final isSelected = _selectedFilter == filter;
     return GestureDetector(
       onTap: () {
@@ -534,29 +658,49 @@ class _ScannedPreviewScreenState extends State<ScannedPreviewScreen> {
           _selectedFilter = filter;
         });
       },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF5046E5) : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
+          color: isSelected ? const Color(0xFF5046E5).withValues(alpha: 0.3) : const Color(0xFF171B2D),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: isSelected ? const Color(0xFF5046E5) : const Color(0xFF3A4058),
+            color: isSelected ? const Color(0xFF58F5B0) : const Color(0xFF3A4058),
+            width: isSelected ? 2.0 : 1.0,
           ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF5046E5).withValues(alpha: 0.35),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ]
+              : null,
         ),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 16,
-              color: isSelected ? Colors.white : Colors.white60,
+            Container(
+              width: 26,
+              height: 26,
+              decoration: BoxDecoration(
+                color: accentColor.withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                icon,
+                size: 14,
+                color: isSelected ? const Color(0xFF58F5B0) : accentColor,
+              ),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 8),
             Text(
               title,
               style: GoogleFonts.nunito(
                 fontSize: 12,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                color: isSelected ? Colors.white : Colors.white60,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                color: isSelected ? Colors.white : Colors.white70,
               ),
             ),
           ],
