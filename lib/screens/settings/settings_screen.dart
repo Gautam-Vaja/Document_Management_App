@@ -81,7 +81,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (context, provider, child) {
         final totalDocs = provider.totalDocumentsCount;
         final totalStorage = provider.formattedTotalStorage;
-        final favCount = provider.rawDocuments.where((d) => d.isFavorite).length;
+        final favCount = provider.rawDocuments
+            .where((d) => d.isFavorite)
+            .length;
 
         return Container(
           decoration: BoxDecoration(
@@ -143,9 +145,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onPressed: () {
                       provider.loadDocuments();
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Database synchronised'),
-                          duration: Duration(seconds: 1),
+                        SnackBar(
+                          content: Text(
+                            'Database synchronised',
+                            style: GoogleFonts.nunito(),
+                          ),
+                          duration: const Duration(seconds: 1),
                         ),
                       );
                     },
@@ -184,10 +189,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const SizedBox(height: 2),
         Text(
           label,
-          style: GoogleFonts.nunito(
-            fontSize: 11,
-            color: Colors.grey.shade500,
-          ),
+          style: GoogleFonts.nunito(fontSize: 11, color: Colors.grey.shade500),
         ),
       ],
     );
@@ -205,7 +207,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SwitchListTile(
             title: Text(
               AppStrings.biometric,
-              style: GoogleFonts.nunito(fontWeight: FontWeight.w600, fontSize: 14),
+              style: GoogleFonts.nunito(
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+                color: const Color(0xFF20202A),
+              ),
             ),
             secondary: const Icon(Icons.fingerprint, color: Color(0xFF5046E5)),
             activeThumbColor: const Color(0xFF5046E5),
@@ -213,10 +219,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onChanged: (val) => setState(() => _biometricLock = val),
           ),
           Divider(height: 1, color: Colors.grey.shade200),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                // Icon background
+                const Icon(
+                  Icons.timer_outlined,
+                  color: Color(0xFF5146E5),
+                  size: 25,
+                ),
+
+                const SizedBox(width: 10),
+
+                // Title
+                Expanded(
+                  flex: 4,
+                  child: Text(
+                    '${AppStrings.autoLock}\n${AppStrings.timeOut}',
+                    style: GoogleFonts.nunito(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF20202A),
+                      height: 1.25,
+                    ),
+                  ),
+                ),
+
+                // Selected value
+                Expanded(
+                  flex: 4,
+                  child: Text(
+                    '${AppStrings.immediatelyAfterExit}\n${AppStrings.exit}',
+                    style: GoogleFonts.nunito(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: const Color(0xFF555563),
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+
+                // Arrow
+                const Icon(
+                  Icons.chevron_right,
+                  color: Color(0xFF555563),
+                  size: 22,
+                ),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: Colors.grey.shade200),
           SwitchListTile(
             title: Text(
               AppStrings.bitEncryption,
-              style: GoogleFonts.nunito(fontWeight: FontWeight.w600, fontSize: 14),
+              style: GoogleFonts.nunito(
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+                color: const Color(0xFF20202A),
+              ),
             ),
             secondary: const Icon(Icons.lock_outline, color: Color(0xFF5046E5)),
             activeThumbColor: const Color(0xFF5046E5),
@@ -237,29 +298,171 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       child: Column(
         children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                // Icon background
+                const Icon(
+                  Icons.qr_code_scanner,
+                  color: Color(0xFF5146E5),
+                  size: 25,
+                ),
+
+                const SizedBox(width: 10),
+
+                // Title
+                Expanded(
+                  flex: 4,
+                  child: Text(
+                    '${AppStrings.scanQuality}\n${AppStrings.quality}',
+                    style: GoogleFonts.nunito(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF20202A),
+                      height: 1.25,
+                    ),
+                  ),
+                ),
+
+                // Selected value
+                Expanded(
+                  flex: 4,
+                  child: Text(
+                    '${AppStrings.superHigh}\n${AppStrings.dpi}',
+                    style: GoogleFonts.nunito(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: const Color(0xFF555563),
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+
+                // Arrow
+                const Icon(
+                  Icons.chevron_right,
+                  color: Color(0xFF555563),
+                  size: 22,
+                ),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: Colors.grey.shade200),
           SwitchListTile(
             title: Text(
               AppStrings.autoEnhance,
-              style: GoogleFonts.nunito(fontWeight: FontWeight.w600, fontSize: 14),
+              style: GoogleFonts.nunito(
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+                color: const Color(0xFF20202A),
+              ),
             ),
-            secondary: const Icon(Icons.auto_awesome, color: Color(0xFF5046E5)),
+            secondary: const Icon(
+              Icons.document_scanner_outlined,
+              color: Color(0xFF5046E5),
+            ),
             activeThumbColor: const Color(0xFF5046E5),
             value: _autoEnhance,
             onChanged: (val) => setState(() => _autoEnhance = val),
           ),
           Divider(height: 1, color: Colors.grey.shade200),
-          ListTile(
-            title: Text(
-              AppStrings.scanQuality,
-              style: GoogleFonts.nunito(fontWeight: FontWeight.w600, fontSize: 14),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                // Icon background
+                const Icon(Icons.translate, color: Color(0xFF5146E5), size: 25),
+
+                const SizedBox(width: 10),
+
+                // Title
+                Expanded(
+                  flex: 4,
+                  child: Text(
+                    '${AppStrings.ocrRecognition}\n${AppStrings.language}',
+                    style: GoogleFonts.nunito(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF20202A),
+                      height: 1.25,
+                    ),
+                  ),
+                ),
+
+                // Selected value
+                Expanded(
+                  flex: 4,
+                  child: Text(
+                    '${AppStrings.english}\n${AppStrings.more}',
+                    style: GoogleFonts.nunito(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: const Color(0xFF555563),
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+
+                // Arrow
+                const Icon(
+                  Icons.chevron_right,
+                  color: Color(0xFF555563),
+                  size: 22,
+                ),
+              ],
             ),
-            subtitle: Text(
-              AppStrings.superHigh,
-              style: GoogleFonts.nunito(color: Colors.grey.shade500, fontSize: 12),
+          ),
+          Divider(height: 1, color: Colors.grey.shade200),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                // Icon background
+                const Icon(
+                  Icons.palette_outlined,
+                  color: Color(0xFF5146E5),
+                  size: 25,
+                ),
+
+                const SizedBox(width: 10),
+
+                // Title
+                Expanded(
+                  flex: 4,
+                  child: Text(
+                    AppStrings.theme,
+                    style: GoogleFonts.nunito(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF20202A),
+                      height: 1.25,
+                    ),
+                  ),
+                ),
+
+                // Selected value
+                Expanded(
+                  flex: 4,
+                  child: Text(
+                    AppStrings.systemLight,
+                    style: GoogleFonts.nunito(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: const Color(0xFF555563),
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+
+                // Arrow
+                const Icon(
+                  Icons.chevron_right,
+                  color: Color(0xFF555563),
+                  size: 22,
+                ),
+              ],
             ),
-            leading: const Icon(Icons.high_quality_outlined, color: Color(0xFF5046E5)),
-            trailing: const Icon(Icons.chevron_right, color: Colors.grey),
-            onTap: () {},
           ),
         ],
       ),
@@ -278,11 +481,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             title: Text(
               AppStrings.appVersion,
-              style: GoogleFonts.nunito(fontWeight: FontWeight.w600, fontSize: 14),
+              style: GoogleFonts.nunito(
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+                color: const Color(0xFF20202A),
+              ),
             ),
             subtitle: Text(
               AppStrings.version,
-              style: GoogleFonts.nunito(color: Colors.grey.shade500, fontSize: 12),
+              style: GoogleFonts.nunito(
+                color: Colors.grey.shade500,
+                fontSize: 12,
+              ),
             ),
             leading: const Icon(Icons.info_outline, color: Color(0xFF5046E5)),
           ),
@@ -290,7 +500,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             title: Text(
               AppStrings.helpCenter,
-              style: GoogleFonts.nunito(fontWeight: FontWeight.w600, fontSize: 14),
+              style: GoogleFonts.nunito(
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+                color: const Color(0xFF20202A),
+              ),
             ),
             leading: const Icon(Icons.help_outline, color: Color(0xFF5046E5)),
             trailing: const Icon(Icons.chevron_right, color: Colors.grey),
