@@ -213,4 +213,35 @@ class DocumentProvider extends ChangeNotifier {
       return false;
     }
   }
+
+  Future<bool> updateDocumentImage(DocumentModel doc, String editedFilePath) async {
+    if (doc.id == null) return false;
+
+    try {
+      final editedFile = File(editedFilePath);
+      if (!await editedFile.exists()) return false;
+
+      final savedFile = File(doc.filePath);
+      await editedFile.copy(savedFile.path);
+      final updated = doc.copyWith(
+        fileSize: await savedFile.length(),
+        updatedAt: DateTime.now().toIso8601String(),
+      );
+      await _service.updateDocument(updated);
+
+      final index = _documents.indexWhere((item) => item.id == doc.id);
+      if (index != -1) {
+        _documents[index] = updated;
+        notifyListeners();
+      }
+
+      if (editedFile.path != savedFile.path) {
+        await editedFile.delete();
+      }
+      return true;
+    } catch (e) {
+      debugPrint('Error updating document image: $e');
+      return false;
+    }
+  }
 }

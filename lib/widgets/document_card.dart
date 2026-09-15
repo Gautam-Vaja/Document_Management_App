@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:document_management_app/model/database_model.dart';
 import 'package:document_management_app/provider/document_provider.dart';
+import 'package:document_management_app/screens/DocumentScanner/document_crop_screen.dart';
 import 'package:document_management_app/service/pdf_share_service.dart';
 import 'package:document_management_app/widgets/document_preview_dialog.dart';
 import 'package:flutter/material.dart';
@@ -103,6 +104,26 @@ class DocumentCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _editDocument(BuildContext context) async {
+    if (document.fileType.toLowerCase() == 'pdf') return;
+
+    final editedPath = await DocumentCropScreen.open(context, document.filePath);
+    if (editedPath == null || !context.mounted) return;
+
+    final updated = await context.read<DocumentProvider>().updateDocumentImage(
+      document,
+      editedPath,
+    );
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(updated ? 'Document updated successfully' : 'Could not update document'),
+          backgroundColor: updated ? const Color(0xFF10B981) : Colors.redAccent,
+        ),
+      );
+    }
   }
 
   @override
@@ -255,6 +276,8 @@ class DocumentCard extends StatelessWidget {
                     PdfShareService.shareDocumentAsPdf(context, document: document);
                   } else if (val == 'view') {
                     DocumentPreviewDialog.show(context, document);
+                  } else if (val == 'edit') {
+                    _editDocument(context);
                   } else if (val == 'rename') {
                     _showRenameDialog(context);
                   } else if (val == 'delete') {
@@ -285,6 +308,17 @@ class DocumentCard extends StatelessWidget {
                         Icon(Icons.visibility_outlined, size: 18),
                         SizedBox(width: 10),
                         Text('View Details'),
+                      ],
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'edit',
+                    enabled: document.fileType.toLowerCase() != 'pdf',
+                    child: const Row(
+                      children: [
+                        Icon(Icons.edit_outlined, size: 18),
+                        SizedBox(width: 10),
+                        Text('Edit Document'),
                       ],
                     ),
                   ),

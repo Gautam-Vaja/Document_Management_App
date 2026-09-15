@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:document_management_app/model/database_model.dart';
 import 'package:document_management_app/provider/document_provider.dart';
+import 'package:document_management_app/screens/DocumentScanner/document_crop_screen.dart';
 import 'package:document_management_app/service/pdf_share_service.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -109,6 +110,30 @@ class DocumentPreviewDialog extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _editDocument(BuildContext context) async {
+    final currentDoc = context.read<DocumentProvider>().rawDocuments.firstWhere(
+      (d) => d.id == document.id,
+      orElse: () => document,
+    );
+    if (currentDoc.fileType.toLowerCase() == 'pdf') return;
+
+    final editedPath = await DocumentCropScreen.open(context, currentDoc.filePath);
+    if (editedPath == null || !context.mounted) return;
+
+    final updated = await context.read<DocumentProvider>().updateDocumentImage(
+      currentDoc,
+      editedPath,
+    );
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(updated ? 'Document updated successfully' : 'Could not update document'),
+          backgroundColor: updated ? const Color(0xFF10B981) : Colors.redAccent,
+        ),
+      );
+    }
   }
 
   @override
@@ -283,6 +308,24 @@ class DocumentPreviewDialog extends StatelessWidget {
                               borderRadius: BorderRadius.circular(12),
                             ),
                             elevation: 0,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: currentDoc.fileType.toLowerCase() == 'pdf'
+                              ? null
+                              : () => _editDocument(context),
+                          icon: const Icon(Icons.edit_outlined, size: 18),
+                          label: const Text('Edit Document'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF5046E5),
+                            side: const BorderSide(color: Color(0xFF5046E5)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
                           ),
                         ),
                       ),
