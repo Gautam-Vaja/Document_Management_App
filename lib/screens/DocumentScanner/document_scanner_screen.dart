@@ -513,6 +513,7 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
 
     setState(() {
       _isOpeningAiScanner = true;
+      _errorMessage = null;
     });
 
     final DocumentScanner documentScanner = DocumentScanner(
@@ -557,7 +558,9 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
     } catch (e) {
       debugPrint('ML Kit scanner error: $e');
       if (mounted) {
-        Navigator.pop(context);
+        setState(() {
+          _errorMessage = _scannerErrorMessage(e);
+        });
       }
     } finally {
       documentScanner.close();
@@ -567,6 +570,17 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
         });
       }
     }
+  }
+
+  String _scannerErrorMessage(Object error) {
+    final message = error.toString();
+    if (message.contains('UNAVAILABLE') || message.contains('FEATURE_NOT_AVAILABLE')) {
+      return 'Document scanning is unavailable on this phone. Update Google Play services and try again.';
+    }
+    if (message.contains('CANCELED') || message.contains('cancelled')) {
+      return 'Document scanning was cancelled.';
+    }
+    return 'Unable to open document scanner. Make sure Google Play services is installed and updated.';
   }
 
   // ============================================================
@@ -579,40 +593,30 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
         backgroundColor: Colors.black,
-        body: SafeArea(
-          top: false,
-          bottom: true,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // 1. Camera Viewfinder Area
-              Positioned.fill(
-                child: _buildCameraPreviewArea(),
-              ),
-
-              // 2. Top Controls Bar
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: _buildTopBar(),
-              ),
-
-              // 3. Shutter blink animation
-              if (_showShutterEffect)
-                Positioned.fill(
-                  child: Container(color: Colors.white),
+        body: Center(
+          child: _errorMessage == null
+              ? const CircularProgressIndicator(color: Colors.white)
+              : Padding(
+                  padding: const EdgeInsets.all(28),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.document_scanner_outlined, color: Colors.white70, size: 56),
+                      const SizedBox(height: 16),
+                      Text(
+                        _errorMessage!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.white70, fontSize: 15),
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton.icon(
+                        onPressed: _startGoogleDocumentScanner,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Retry Scanner'),
+                      ),
+                    ],
+                  ),
                 ),
-
-              // 4. Bottom Normal Camera Controls
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: _buildBottomControls(),
-              ),
-            ],
-          ),
         ),
       ),
     );
