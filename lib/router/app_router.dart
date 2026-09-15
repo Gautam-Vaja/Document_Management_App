@@ -8,7 +8,7 @@ import 'package:go_router/go_router.dart';
 
 class AppRouter {
   static GoRouter router = GoRouter(
-    initialLocation: '/home',
+    initialLocation: '/splashScreen',
     routes: [
       GoRoute(path: '/home', builder: (context, state) => const HomeScreen()),
       GoRoute(

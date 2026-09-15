@@ -194,25 +194,29 @@ class DocumentCard extends StatelessWidget {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 6),
                         Text(
                           DocumentProvider.formatBytes(document.fileSize),
                           style: GoogleFonts.nunito(
-                            fontSize: 12,
+                            fontSize: 11,
                             color: Colors.grey.shade500,
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 6),
                         Text(
                           "•",
-                          style: TextStyle(color: Colors.grey.shade400),
+                          style: TextStyle(color: Colors.grey.shade400, fontSize: 10),
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          _formatDate(document.createdAt),
-                          style: GoogleFonts.nunito(
-                            fontSize: 12,
-                            color: Colors.grey.shade500,
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            _formatDate(document.createdAt),
+                            style: GoogleFonts.nunito(
+                              fontSize: 11,
+                              color: Colors.grey.shade500,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
@@ -223,12 +227,15 @@ class DocumentCard extends StatelessWidget {
 
               // Favorite Star Button
               IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.all(6),
+                constraints: const BoxConstraints(),
                 icon: Icon(
                   document.isFavorite ? Icons.star : Icons.star_border,
                   color: document.isFavorite
                       ? Colors.amber
                       : Colors.grey.shade400,
-                  size: 22,
+                  size: 20,
                 ),
                 onPressed: () {
                   context.read<DocumentProvider>().toggleFavorite(document);
@@ -237,7 +244,9 @@ class DocumentCard extends StatelessWidget {
 
               // More Menu
               PopupMenuButton<String>(
-                icon: Icon(Icons.more_vert, color: Colors.grey.shade600),
+                padding: const EdgeInsets.all(6),
+                constraints: const BoxConstraints(),
+                icon: Icon(Icons.more_vert, color: Colors.grey.shade600, size: 20),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
