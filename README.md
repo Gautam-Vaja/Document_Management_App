@@ -22,6 +22,7 @@
 ## 📌 Table of Contents
 
 - [Overview](#-overview)
+- [App Screenshots](#-app-screenshots)
 - [Key Features](#-key-features)
 - [Architecture & Tech Stack](#-architecture--tech-stack)
 - [Project Directory Structure](#-project-directory-structure)
@@ -43,6 +44,17 @@
 3. **Enhancing** image quality using hardware-accelerated color matrices (e.g. Magic Color, Clean Paper, B&W, High Contrast).
 4. **Exporting & Sharing** instantly as high-fidelity A4 PDF documents.
 5. **Managing & Archiving** locally in an isolated encrypted vault with SQLite indexing, live search, favorites tagging, and storage diagnostics.
+
+---
+
+## 📱 App Screenshots
+
+<p align="center">
+  <img src="screenshots/HomeScreen.png" width="220" alt="Home Screen">
+  <img src="screenshots/DocumentScreen.png" width="220" alt="Document Screen">
+  <img src="screenshots/FavoriteScreen.png" width="220" alt="Favorite Screen">
+  <img src="screenshots/SettingScreen.png" width="220" alt="Settings Screen">
+</p>
 
 ---
 
