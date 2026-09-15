@@ -40,7 +40,10 @@ class _DocumentScreenState extends State<DocumentScreen> {
       if (pickedFile == null || !mounted) return;
 
       // FIRST show edit and crop screen
-      final croppedPath = await DocumentCropScreen.open(context, pickedFile.path);
+      final croppedPath = await DocumentCropScreen.open(
+        context,
+        pickedFile.path,
+      );
       if (croppedPath == null || !mounted) return;
 
       // THEN navigate to ScannedPreviewScreen
@@ -108,7 +111,10 @@ class _DocumentScreenState extends State<DocumentScreen> {
                 ),
                 subtitle: Text(
                   'Scan document pages directly',
-                  style: GoogleFonts.nunito(color: Colors.white60, fontSize: 12),
+                  style: GoogleFonts.nunito(
+                    color: Colors.white60,
+                    fontSize: 12,
+                  ),
                 ),
                 onTap: () {
                   Navigator.pop(ctx);
@@ -123,10 +129,7 @@ class _DocumentScreenState extends State<DocumentScreen> {
                     color: const Color(0xFF10B981),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(
-                    Icons.upload_file,
-                    color: Colors.white,
-                  ),
+                  child: const Icon(Icons.upload_file, color: Colors.white),
                 ),
                 title: Text(
                   'Upload from Gallery',
@@ -137,7 +140,10 @@ class _DocumentScreenState extends State<DocumentScreen> {
                 ),
                 subtitle: Text(
                   'Choose image or photo from gallery',
-                  style: GoogleFonts.nunito(color: Colors.white60, fontSize: 12),
+                  style: GoogleFonts.nunito(
+                    color: Colors.white60,
+                    fontSize: 12,
+                  ),
                 ),
                 onTap: () {
                   Navigator.pop(ctx);
@@ -162,10 +168,13 @@ class _DocumentScreenState extends State<DocumentScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showAddOptions,
         backgroundColor: const Color(0xFF5046E5),
-        icon: const Icon(Icons.add, color: Colors.white),
+
+        extendedPadding: const EdgeInsets.symmetric(horizontal: 14),
+        icon: const Icon(Icons.add, color: Colors.white, size: 20),
         label: Text(
           'Add Document',
           style: GoogleFonts.nunito(
+            fontSize: 13, // reduce text size
             fontWeight: FontWeight.bold,
             color: Colors.white,
           ),
@@ -341,9 +350,7 @@ class _DocumentScreenState extends State<DocumentScreen> {
         if (_selectedFilter == 'Favorites') {
           docs = docs.where((d) => d.isFavorite).toList();
         } else if (_selectedFilter == 'Images') {
-          docs = docs
-              .where((d) => d.fileType.toLowerCase() != 'pdf')
-              .toList();
+          docs = docs.where((d) => d.fileType.toLowerCase() != 'pdf').toList();
         }
 
         // Apply Local Search Filter
@@ -379,8 +386,8 @@ class _DocumentScreenState extends State<DocumentScreen> {
                     q.isNotEmpty
                         ? 'No matching documents'
                         : (_selectedFilter == 'Favorites'
-                            ? 'No favorite documents'
-                            : 'No documents in database'),
+                              ? 'No favorite documents'
+                              : 'No documents in database'),
                     style: GoogleFonts.nunito(
                       fontSize: 17,
                       fontWeight: FontWeight.bold,
@@ -431,10 +438,7 @@ class _DocumentScreenState extends State<DocumentScreen> {
             padding: const EdgeInsets.only(bottom: 80),
             itemBuilder: (context, index) {
               final doc = docs[index];
-              return DocumentCard(
-                key: ValueKey(doc.id),
-                document: doc,
-              );
+              return DocumentCard(key: ValueKey(doc.id), document: doc);
             },
           ),
         );
