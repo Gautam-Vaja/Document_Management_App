@@ -107,7 +107,7 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                AppStrings.goodMorning,
+                _timeGreeting,
                 style: GoogleFonts.nunito(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
@@ -142,6 +142,13 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ],
     );
+  }
+
+  String get _timeGreeting {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good Morning';
+    if (hour < 17) return 'Good Afternoon';
+    return 'Good Evening';
   }
 
   Widget _buildSearchField() {
