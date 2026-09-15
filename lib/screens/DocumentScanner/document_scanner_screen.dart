@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:camera/camera.dart';
 import 'package:document_management_app/screens/DocumentScanner/document_crop_screen.dart';
 import 'package:document_management_app/screens/DocumentScanner/scanned_preview_screen.dart';
@@ -24,31 +25,40 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
   bool _flashOn = false;
   bool _showLevelerGrid = false;
   bool _showShutterEffect = false;
+  bool _isOpeningAiScanner = false;
+
   String? _errorMessage;
 
   String _selectedMode = 'Single Page';
-  int _batchCount = 0;
+
+  // Batch scanned images
+  final List<String> _batchImages = [];
 
   late AnimationController _laserController;
+
   Timer? _autoScanTimer;
 
   @override
   void initState() {
     super.initState();
+
     _laserController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
 
+    // Only initialize Flutter camera.
+    // DO NOT automatically open ML Kit here.
     _initializeCamera();
-
-    // Automatically trigger AI auto-capture & auto-crop on launch
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _startGoogleDocumentScanner();
-    });
   }
 
+  // ============================================================
+  // CAMERA INITIALIZATION
+  // ============================================================
+
   Future<void> _initializeCamera() async {
+    if (!mounted) return;
+
     setState(() {
       _errorMessage = null;
       _isInitialized = false;
@@ -58,59 +68,109 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
       _cameras = await availableCameras();
 
       if (_cameras == null || _cameras!.isEmpty) {
-        setState(() {
-          _errorMessage = 'No camera found on this device.';
-        });
+        if (mounted) {
+          setState(() {
+            _errorMessage = 'No camera found on this device.';
+          });
+        }
         return;
       }
 
-      final camera = _cameras!.firstWhere(
+      final CameraDescription camera = _cameras!.firstWhere(
         (camera) => camera.lensDirection == CameraLensDirection.back,
         orElse: () => _cameras!.first,
       );
 
-      _controller = CameraController(
+      final CameraController controller = CameraController(
         camera,
         ResolutionPreset.high,
         enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.jpeg,
       );
 
-      await _controller!.initialize();
+      await controller.initialize();
 
-      if (mounted) {
-        setState(() {
-          _isInitialized = true;
-        });
+      if (!mounted) {
+        await controller.dispose();
+        return;
       }
+
+      _controller = controller;
+
+      setState(() {
+        _isInitialized = true;
+      });
+    } on CameraException catch (e) {
+      debugPrint('CameraException: ${e.code} - ${e.description}');
+
+      if (!mounted) return;
+
+      setState(() {
+        _errorMessage =
+            'Unable to access camera.\n\n'
+            'Please allow camera permission and try again.';
+      });
     } catch (e) {
-      debugPrint('Camera error: $e');
-      if (mounted) {
-        setState(() {
-          _errorMessage = 'Camera initialization failed. Please check permissions.';
-        });
-      }
+      debugPrint('Camera initialization error: $e');
+
+      if (!mounted) return;
+
+      setState(() {
+        _errorMessage =
+            'Camera initialization failed.\n\n'
+            'Please restart the app and try again.';
+      });
     }
   }
 
+  // ============================================================
+  // AI DOCUMENT SCANNER
+  // ============================================================
+
   Future<void> _startGoogleDocumentScanner() async {
-    final documentScanner = DocumentScanner(
+    if (_isOpeningAiScanner) return;
+
+    setState(() {
+      _isOpeningAiScanner = true;
+    });
+
+    final DocumentScanner documentScanner = DocumentScanner(
       options: DocumentScannerOptions(
         mode: ScannerMode.full,
         isGalleryImport: true,
-        pageLimit: _selectedMode.startsWith('Batch') ? 10 : 1,
+        pageLimit: _selectedMode == 'Batch' ? 10 : 1,
       ),
     );
 
     try {
-      final DocumentScanningResult result = await documentScanner.scanDocument();
-      final images = result.images;
+      // IMPORTANT:
+      // Release Flutter camera before ML Kit uses the camera.
+      await _disposeCamera();
+
+      final DocumentScanningResult result = await documentScanner
+          .scanDocument();
+
+      final List<String>? images = result.images;
+
       if (images != null && images.isNotEmpty && mounted) {
-        for (final imgPath in images) {
+        if (_selectedMode == 'Batch') {
+          setState(() {
+            _batchImages.addAll(images);
+          });
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${images.length} page(s) added to batch'),
+              duration: const Duration(seconds: 1),
+            ),
+          );
+        } else {
+          // Single page
           await Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => ScannedPreviewScreen(
-                imagePath: imgPath,
+                imagePath: images.first,
                 scanMode: _selectedMode,
               ),
             ),
@@ -118,30 +178,85 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
         }
       }
     } catch (e) {
-      debugPrint('ML Kit Document Scanner error: $e');
+      debugPrint('Google ML Kit Document Scanner error: $e');
+
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Document scanner error: $e')));
+      }
     } finally {
       documentScanner.close();
+
+      if (mounted) {
+        setState(() {
+          _isOpeningAiScanner = false;
+        });
+
+        // Start Flutter camera again.
+        await _initializeCamera();
+      }
     }
   }
 
+  // ============================================================
+  // DISPOSE CAMERA
+  // ============================================================
+
+  Future<void> _disposeCamera() async {
+    try {
+      final CameraController? controller = _controller;
+
+      _controller = null;
+
+      if (mounted) {
+        setState(() {
+          _isInitialized = false;
+        });
+      }
+
+      if (controller != null) {
+        await controller.dispose();
+      }
+    } catch (e) {
+      debugPrint('Camera dispose error: $e');
+    }
+  }
+
+  // ============================================================
+  // TAKE PICTURE
+  // ============================================================
+
   Future<void> _takePicture() async {
-    if (!_isInitialized || _controller == null || _isCapturing) return;
-
-    setState(() {
-      _isCapturing = true;
-      _showShutterEffect = true;
-    });
-
-    // Shutter flash animation
-    await Future.delayed(const Duration(milliseconds: 150));
-    if (mounted) {
-      setState(() {
-        _showShutterEffect = false;
-      });
+    if (!_isInitialized ||
+        _controller == null ||
+        _isCapturing ||
+        _isOpeningAiScanner) {
+      return;
     }
 
     try {
-      final XFile image = await _controller!.takePicture();
+      setState(() {
+        _isCapturing = true;
+        _showShutterEffect = true;
+      });
+
+      // Shutter animation
+      await Future.delayed(const Duration(milliseconds: 150));
+
+      if (mounted) {
+        setState(() {
+          _showShutterEffect = false;
+        });
+      }
+
+      final CameraController? controller = _controller;
+
+      if (controller == null || !controller.value.isInitialized) {
+        throw Exception('Camera is not initialized.');
+      }
+
+      final XFile image = await controller.takePicture();
 
       if (!mounted) return;
 
@@ -149,27 +264,41 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
         _isCapturing = false;
       });
 
-      // FIRST show edit & crop screen so user can auto-crop or adjust
-      final croppedPath = await DocumentCropScreen.open(context, image.path);
-      if (croppedPath == null || !mounted) return;
+      // Open crop screen
+      final String? croppedPath = await DocumentCropScreen.open(
+        context,
+        image.path,
+      );
 
-      if (_selectedMode == 'Batch') {
-        setState(() {
-          _batchCount++;
-        });
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Page $_batchCount cropped & added to batch'),
-              duration: const Duration(seconds: 1),
-            ),
-          );
-        }
+      if (croppedPath == null || !mounted) {
         return;
       }
 
-      // Navigate to ScannedPreviewScreen with cropped document
+      // ========================================================
+      // BATCH MODE
+      // ========================================================
+
+      if (_selectedMode == 'Batch') {
+        setState(() {
+          _batchImages.add(croppedPath);
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Page ${_batchImages.length} cropped & added to batch',
+            ),
+            duration: const Duration(seconds: 1),
+          ),
+        );
+
+        return;
+      }
+
+      // ========================================================
+      // SINGLE PAGE / ID CARD
+      // ========================================================
+
       await Navigator.push(
         context,
         MaterialPageRoute(
@@ -181,53 +310,125 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
       );
     } catch (e) {
       debugPrint('Capture error: $e');
-      if (mounted) {
-        setState(() {
-          _isCapturing = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to capture document: $e')),
-        );
-      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _isCapturing = false;
+        _showShutterEffect = false;
+      });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to capture document: $e')));
     }
   }
+
+  // ============================================================
+  // GALLERY IMPORT
+  // ============================================================
 
   Future<void> _importFromGallery() async {
     try {
       final ImagePicker picker = ImagePicker();
-      final XFile? pickedFile = await picker.pickImage(source: ImageSource.gallery);
 
-      if (pickedFile != null && mounted) {
-        // FIRST show edit & crop screen
-        final croppedPath = await DocumentCropScreen.open(context, pickedFile.path);
-        if (croppedPath != null && mounted) {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ScannedPreviewScreen(
-                imagePath: croppedPath,
-                scanMode: 'Gallery Import',
-              ),
-            ),
-          );
-        }
+      final XFile? pickedFile = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 100,
+      );
+
+      if (pickedFile == null || !mounted) {
+        return;
       }
+
+      // Open crop screen
+      final String? croppedPath = await DocumentCropScreen.open(
+        context,
+        pickedFile.path,
+      );
+
+      if (croppedPath == null || !mounted) {
+        return;
+      }
+
+      // ========================================================
+      // BATCH MODE
+      // ========================================================
+
+      if (_selectedMode == 'Batch') {
+        setState(() {
+          _batchImages.add(croppedPath);
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Page ${_batchImages.length} added from gallery'),
+            duration: const Duration(seconds: 1),
+          ),
+        );
+
+        return;
+      }
+
+      // ========================================================
+      // SINGLE PAGE
+      // ========================================================
+
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ScannedPreviewScreen(
+            imagePath: croppedPath,
+            scanMode: 'Gallery Import',
+          ),
+        ),
+      );
     } catch (e) {
       debugPrint('Image picker error: $e');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Unable to import image: $e')));
     }
   }
 
+  // ============================================================
+  // FLASH
+  // ============================================================
+
   Future<void> _toggleFlash() async {
-    if (_controller == null || !_isInitialized) return;
+    final CameraController? controller = _controller;
+
+    if (controller == null ||
+        !_isInitialized ||
+        !controller.value.isInitialized) {
+      return;
+    }
 
     try {
-      _flashOn = !_flashOn;
-      await _controller!.setFlashMode(_flashOn ? FlashMode.torch : FlashMode.off);
-      setState(() {});
+      final bool newFlashState = !_flashOn;
+
+      await controller.setFlashMode(
+        newFlashState ? FlashMode.torch : FlashMode.off,
+      );
+
+      if (mounted) {
+        setState(() {
+          _flashOn = newFlashState;
+        });
+      }
+    } on CameraException catch (e) {
+      debugPrint('Flash CameraException: ${e.code}');
     } catch (e) {
       debugPrint('Flash error: $e');
     }
   }
+
+  // ============================================================
+  // LEVELER
+  // ============================================================
 
   void _toggleLeveler() {
     setState(() {
@@ -235,13 +436,66 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
     });
   }
 
+  // ============================================================
+  // CLEAR BATCH
+  // ============================================================
+
+  void _clearBatch() {
+    if (_batchImages.isEmpty) return;
+
+    setState(() {
+      _batchImages.clear();
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Batch cleared'),
+        duration: Duration(milliseconds: 800),
+      ),
+    );
+  }
+
+  // ============================================================
+  // OPEN BATCH PREVIEW
+  // ============================================================
+
+  Future<void> _openBatchPreview() async {
+    if (_batchImages.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('No pages in batch')));
+      return;
+    }
+
+    // Open first page for now.
+    // You can later create a dedicated BatchPreviewScreen.
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ScannedPreviewScreen(
+          imagePath: _batchImages.first,
+          scanMode: 'Batch',
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // DISPOSE
+  // ============================================================
+
   @override
   void dispose() {
     _autoScanTimer?.cancel();
     _laserController.dispose();
     _controller?.dispose();
+
     super.dispose();
   }
+
+  // ============================================================
+  // BUILD
+  // ============================================================
 
   @override
   Widget build(BuildContext context) {
@@ -259,7 +513,9 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
     );
   }
 
-  // ---------------- TOP BAR ----------------
+  // ============================================================
+  // TOP BAR
+  // ============================================================
 
   Widget _buildTopBar() {
     return Container(
@@ -274,7 +530,9 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
               Navigator.pop(context);
             },
           ),
+
           const SizedBox(width: 8),
+
           Expanded(
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -282,21 +540,33 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
               child: Row(
                 children: [
                   _modeButton('Single Page'),
+
                   const SizedBox(width: 6),
-                  _modeButton(_batchCount > 0 ? 'Batch ($_batchCount)' : 'Batch'),
+
+                  _modeButton(
+                    _batchImages.isNotEmpty
+                        ? 'Batch (${_batchImages.length})'
+                        : 'Batch',
+                  ),
+
                   const SizedBox(width: 6),
+
                   _modeButton('ID Card'),
                 ],
               ),
             ),
           ),
+
           const SizedBox(width: 8),
+
           _circleButton(
             icon: _flashOn ? Icons.flash_on : Icons.flash_off,
             color: _flashOn ? const Color(0xFF58F5B0) : Colors.white,
             onTap: _toggleFlash,
           ),
+
           const SizedBox(width: 8),
+
           _circleButton(
             icon: Icons.translate,
             onTap: () {
@@ -310,8 +580,14 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
     );
   }
 
+  // ============================================================
+  // MODE BUTTON
+  // ============================================================
+
   Widget _modeButton(String text) {
-    final bool isSelected = _selectedMode == (text.startsWith('Batch') ? 'Batch' : text);
+    final bool isSelected =
+        _selectedMode == (text.startsWith('Batch') ? 'Batch' : text);
+
     return GestureDetector(
       onTap: () {
         setState(() {
@@ -336,6 +612,10 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
     );
   }
 
+  // ============================================================
+  // CIRCLE BUTTON
+  // ============================================================
+
   Widget _circleButton({
     required IconData icon,
     required VoidCallback onTap,
@@ -355,30 +635,38 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
     );
   }
 
-  // ---------------- CAMERA ----------------
+  // ============================================================
+  // CAMERA AREA
+  // ============================================================
 
   Widget _buildCameraArea() {
+    // Error
     if (_errorMessage != null) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(24.0),
+          padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Icon(Icons.videocam_off, size: 48, color: Colors.white60),
+
               const SizedBox(height: 16),
+
               Text(
                 _errorMessage!,
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.white70, fontSize: 14),
               ),
+
               const SizedBox(height: 20),
+
               ElevatedButton.icon(
                 onPressed: _initializeCamera,
                 icon: const Icon(Icons.refresh),
                 label: const Text('Retry Camera'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF5046E5),
+                  foregroundColor: Colors.white,
                 ),
               ),
             ],
@@ -387,6 +675,7 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
       );
     }
 
+    // Loading
     if (!_isInitialized || _controller == null) {
       return const Center(
         child: CircularProgressIndicator(color: Color(0xFF5046E5)),
@@ -396,16 +685,24 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Camera Preview
+        // ======================================================
+        // CAMERA PREVIEW
+        // ======================================================
         CameraPreview(_controller!),
 
-        // Dark scanner vignette overlay
+        // ======================================================
+        // DARK OVERLAY
+        // ======================================================
         Container(color: Colors.black.withValues(alpha: 0.25)),
 
-        // Document scanning frame with animated laser
+        // ======================================================
+        // SCANNER FRAME
+        // ======================================================
         Center(child: _buildScannerFrame()),
 
-        // Prominent AI Auto Scan Button
+        // ======================================================
+        // AI AUTO SCAN BUTTON
+        // ======================================================
         Positioned(
           top: 14,
           left: 16,
@@ -414,10 +711,13 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
             child: Material(
               color: Colors.transparent,
               child: InkWell(
-                onTap: _startGoogleDocumentScanner,
+                onTap: _isOpeningAiScanner ? null : _startGoogleDocumentScanner,
                 borderRadius: BorderRadius.circular(24),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 9,
+                  ),
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
                       colors: [Color(0xFF5046E5), Color(0xFF7C3AED)],
@@ -431,21 +731,35 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
                       ),
                     ],
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.auto_awesome, color: Color(0xFF58F5B0), size: 18),
-                      SizedBox(width: 8),
+                      const Icon(
+                        Icons.auto_awesome,
+                        color: Color(0xFF58F5B0),
+                        size: 18,
+                      ),
+
+                      const SizedBox(width: 8),
+
                       Text(
-                        'AI Auto-Capture & Auto-Crop',
-                        style: TextStyle(
+                        _isOpeningAiScanner
+                            ? 'Opening Scanner...'
+                            : 'AI Auto-Capture & Auto-Crop',
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      SizedBox(width: 6),
-                      Icon(Icons.arrow_forward_ios, color: Colors.white70, size: 12),
+
+                      const SizedBox(width: 6),
+
+                      const Icon(
+                        Icons.arrow_forward_ios,
+                        color: Colors.white70,
+                        size: 12,
+                      ),
                     ],
                   ),
                 ),
@@ -454,7 +768,9 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
           ),
         ),
 
-        // Shutter flash effect
+        // ======================================================
+        // SHUTTER EFFECT
+        // ======================================================
         if (_showShutterEffect)
           AnimatedOpacity(
             opacity: _showShutterEffect ? 1.0 : 0.0,
@@ -465,7 +781,9 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
     );
   }
 
-  // ---------------- SCANNER FRAME ----------------
+  // ============================================================
+  // SCANNER FRAME
+  // ============================================================
 
   Widget _buildScannerFrame() {
     double width = 280;
@@ -493,7 +811,9 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
     );
   }
 
-  // ---------------- BOTTOM CONTROLS ----------------
+  // ============================================================
+  // BOTTOM CONTROLS
+  // ============================================================
 
   Widget _buildBottomControls() {
     return Container(
@@ -502,6 +822,7 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
       child: Column(
         children: [
           const SizedBox(height: 10),
+
           Text(
             '✦ Perspective & shadow cleanup applied automatically',
             style: TextStyle(
@@ -509,17 +830,20 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
               fontSize: 11,
             ),
           ),
+
           const Spacer(),
+
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
+              // IMPORT
               _bottomAction(
                 icon: Icons.photo_library_outlined,
                 title: 'Import',
                 onTap: _importFromGallery,
               ),
 
-              // Capture button
+              // CAPTURE
               GestureDetector(
                 onTap: _takePicture,
                 child: Container(
@@ -558,6 +882,7 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
                 ),
               ),
 
+              // AI AUTO SCAN
               _bottomAction(
                 icon: Icons.auto_awesome,
                 title: 'AI Auto Scan',
@@ -566,10 +891,13 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
               ),
             ],
           ),
+
           const Spacer(),
+
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
+              // CONTRAST
               _smallOption(
                 'Contrast',
                 Icons.brightness_6,
@@ -582,31 +910,51 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
                   );
                 },
               ),
+
+              // LEVELER
               _smallOption(
                 'Leveler',
                 Icons.grid_3x3,
                 isActive: _showLevelerGrid,
                 onTap: _toggleLeveler,
               ),
+
+              // OCR
               _smallOption(
                 'OCR',
                 Icons.text_fields,
                 onTap: () {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('OCR will extract text from captured document'),
+                      content: Text(
+                        'OCR will extract text from captured document',
+                      ),
                       duration: Duration(milliseconds: 800),
                     ),
                   );
                 },
               ),
+
+              // BATCH
+              if (_batchImages.isNotEmpty)
+                _smallOption(
+                  'Batch',
+                  Icons.layers,
+                  isActive: true,
+                  onTap: _openBatchPreview,
+                ),
             ],
           ),
+
           const SizedBox(height: 10),
         ],
       ),
     );
   }
+
+  // ============================================================
+  // BOTTOM ACTION
+  // ============================================================
 
   Widget _bottomAction({
     required IconData icon,
@@ -622,16 +970,16 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: isActive ? const Color(0xFF5046E5) : const Color(0xFF3A4058),
+              color: isActive
+                  ? const Color(0xFF5046E5)
+                  : const Color(0xFF3A4058),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(
-              icon,
-              color: Colors.white,
-              size: 22,
-            ),
+            child: Icon(icon, color: Colors.white, size: 22),
           ),
+
           const SizedBox(height: 6),
+
           Text(
             title,
             style: TextStyle(
@@ -644,6 +992,10 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
       ),
     );
   }
+
+  // ============================================================
+  // SMALL OPTION
+  // ============================================================
 
   Widget _smallOption(
     String title,
@@ -666,7 +1018,9 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
               color: isActive ? const Color(0xFF58F5B0) : Colors.white54,
               size: 14,
             ),
+
             const SizedBox(width: 4),
+
             Text(
               title,
               style: TextStyle(
