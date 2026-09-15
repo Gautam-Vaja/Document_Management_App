@@ -16,7 +16,7 @@ class DocumentScannerScreen extends StatefulWidget {
 }
 
 class _DocumentScannerScreenState extends State<DocumentScannerScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   CameraController? _controller;
   List<CameraDescription>? _cameras;
 
@@ -26,7 +26,8 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
   bool _showLevelerGrid = false;
   bool _showShutterEffect = false;
   bool _isOpeningAiScanner = false;
-  bool _isFullView = true;
+  // Default to Fit Real (100% of camera sensor visible, no zoom-in / cut-off)
+  bool _isFullView = false;
 
   String? _errorMessage;
 
@@ -42,6 +43,7 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     _laserController = AnimationController(
       vsync: this,
@@ -82,14 +84,28 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
         orElse: () => _cameras!.first,
       );
 
-      final CameraController controller = CameraController(
+      CameraController controller = CameraController(
         camera,
         ResolutionPreset.high,
         enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.jpeg,
       );
 
-      await controller.initialize();
+      try {
+        await controller.initialize();
+      } catch (e) {
+        debugPrint('High resolution camera initialization failed, retrying with medium: $e');
+        controller = CameraController(
+          camera,
+          ResolutionPreset.medium,
+          enableAudio: false,
+        );
+        await controller.initialize();
+      }
+
+      // Ensure camera zoom level is unzoomed 1.0x
+      try {
+        await controller.setZoomLevel(1.0);
+      } catch (_) {}
 
       if (!mounted) {
         await controller.dispose();
@@ -482,11 +498,34 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
   }
 
   // ============================================================
+  // APP LIFECYCLE
+  // ============================================================
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final CameraController? cameraController = _controller;
+
+    // App state changed before controller is initialized
+    if (cameraController == null || !cameraController.value.isInitialized) {
+      return;
+    }
+
+    if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
+      // Free camera when app is backgrounded
+      _disposeCamera();
+    } else if (state == AppLifecycleState.resumed) {
+      // Reconnect camera when app comes back to foreground
+      _initializeCamera();
+    }
+  }
+
+  // ============================================================
   // DISPOSE
   // ============================================================
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _autoScanTimer?.cancel();
     _laserController.dispose();
     _controller?.dispose();
@@ -707,6 +746,26 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
           previewHeight = constraints.maxWidth / aspect;
         }
 
+        // Calculate actual visible preview box dimensions for scanner guide frame
+        final double cameraAspect = previewWidth / previewHeight;
+        final double containerAspect = constraints.maxWidth / constraints.maxHeight;
+
+        double activeWidth;
+        double activeHeight;
+
+        if (_isFullView) {
+          activeWidth = constraints.maxWidth;
+          activeHeight = constraints.maxHeight;
+        } else {
+          if (containerAspect > cameraAspect) {
+            activeHeight = constraints.maxHeight;
+            activeWidth = activeHeight * cameraAspect;
+          } else {
+            activeWidth = constraints.maxWidth;
+            activeHeight = activeWidth / cameraAspect;
+          }
+        }
+
         return ClipRect(
           child: Stack(
             fit: StackFit.expand,
@@ -733,7 +792,7 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
               // ======================================================
               // SCANNER FRAME
               // ======================================================
-              Center(child: _buildScannerFrame()),
+              Center(child: _buildScannerFrame(activeWidth, activeHeight)),
 
               // ======================================================
               // AI AUTO SCAN BUTTON
@@ -825,13 +884,18 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
   // SCANNER FRAME
   // ============================================================
 
-  Widget _buildScannerFrame() {
-    double width = 280;
-    double height = 380;
+  Widget _buildScannerFrame(double activeWidth, double activeHeight) {
+    double width;
+    double height;
 
     if (_selectedMode == 'ID Card') {
-      width = 320;
-      height = 205;
+      // Standard ID-1 card aspect ratio (85.6mm x 53.98mm ~ 1.586)
+      width = (activeWidth * 0.88).clamp(200.0, 320.0);
+      height = width / 1.586;
+    } else {
+      // Standard ISO A4 document aspect ratio (1 : 1.414)
+      width = (activeWidth * 0.82).clamp(200.0, 300.0);
+      height = (width * 1.38).clamp(240.0, activeHeight * 0.85);
     }
 
     return AnimatedBuilder(

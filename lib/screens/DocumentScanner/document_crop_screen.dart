@@ -44,11 +44,21 @@ class _DocumentCropScreenState extends State<DocumentCropScreen> {
   Future<void> _loadImage() async {
     try {
       final bytes = await File(widget.imagePath).readAsBytes();
-      final decoded = img.decodeImage(bytes);
+      img.Image? decoded = img.decodeImage(bytes);
+      if (decoded == null) {
+        throw Exception('Could not decode image.');
+      }
+
+      // Bake EXIF orientation so pixel dimensions match visual portrait/landscape orientation
+      decoded = img.bakeOrientation(decoded);
+
+      // Re-encode to JPEG for preview display without EXIF orientation tag mismatch
+      final bakedBytes = Uint8List.fromList(img.encodeJpg(decoded, quality: 90));
+
       if (mounted) {
         setState(() {
           _decodedImage = decoded;
-          _previewBytes = bytes;
+          _previewBytes = bakedBytes;
           _isLoading = false;
         });
         // Run initial auto-detection
@@ -457,8 +467,8 @@ class _DocumentCropScreenState extends State<DocumentCropScreen> {
           children: [
             // Rotated or original Image
             _previewBytes != null
-                ? Image.memory(_previewBytes!, fit: BoxFit.fill)
-                : Image.file(File(widget.imagePath), fit: BoxFit.fill),
+                ? Image.memory(_previewBytes!, fit: BoxFit.contain)
+                : Image.file(File(widget.imagePath), fit: BoxFit.contain),
 
             // Dark Overlay & Interactive Crop Frame
             Positioned.fill(
