@@ -116,8 +116,8 @@ class CustomBottomBar extends StatelessWidget {
               child: GestureDetector(
                 onTap: () => _handleScanTap(context),
                 child: Container(
-                  width: 88,
-                  height: 88,
+                  width: 60,
+                  height: 60,
                   decoration: BoxDecoration(
                     color: const Color(0xFF5046E5),
                     shape: BoxShape.circle,
