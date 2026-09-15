@@ -26,6 +26,7 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
   bool _showLevelerGrid = false;
   bool _showShutterEffect = false;
   bool _isOpeningAiScanner = false;
+  bool _isFullView = true;
 
   String? _errorMessage;
 
@@ -676,108 +677,147 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
     }
 
     // Loading
-    if (!_isInitialized || _controller == null) {
+    if (!_isInitialized ||
+        _controller == null ||
+        !_controller!.value.isInitialized) {
       return const Center(
         child: CircularProgressIndicator(color: Color(0xFF5046E5)),
       );
     }
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // ======================================================
-        // CAMERA PREVIEW
-        // ======================================================
-        CameraPreview(_controller!),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final previewSize = _controller!.value.previewSize;
+        final isLandscape =
+            MediaQuery.of(context).orientation == Orientation.landscape;
 
-        // ======================================================
-        // DARK OVERLAY
-        // ======================================================
-        Container(color: Colors.black.withValues(alpha: 0.25)),
+        double previewWidth;
+        double previewHeight;
 
-        // ======================================================
-        // SCANNER FRAME
-        // ======================================================
-        Center(child: _buildScannerFrame()),
+        if (previewSize != null) {
+          // Camera previewSize is in landscape coordinate space on mobile
+          previewWidth = isLandscape ? previewSize.width : previewSize.height;
+          previewHeight = isLandscape ? previewSize.height : previewSize.width;
+        } else {
+          double aspect = _controller!.value.aspectRatio;
+          if (!isLandscape && aspect > 1.0) {
+            aspect = 1.0 / aspect;
+          }
+          previewWidth = constraints.maxWidth;
+          previewHeight = constraints.maxWidth / aspect;
+        }
 
-        // ======================================================
-        // AI AUTO SCAN BUTTON
-        // ======================================================
-        Positioned(
-          top: 14,
-          left: 16,
-          right: 16,
-          child: Center(
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: _isOpeningAiScanner ? null : _startGoogleDocumentScanner,
-                borderRadius: BorderRadius.circular(24),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 9,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF5046E5), Color(0xFF7C3AED)],
-                    ),
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF5046E5).withValues(alpha: 0.5),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.auto_awesome,
-                        color: Color(0xFF58F5B0),
-                        size: 18,
-                      ),
-
-                      const SizedBox(width: 8),
-
-                      Text(
-                        _isOpeningAiScanner
-                            ? 'Opening Scanner...'
-                            : 'AI Auto-Capture & Auto-Crop',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-
-                      const SizedBox(width: 6),
-
-                      const Icon(
-                        Icons.arrow_forward_ios,
-                        color: Colors.white70,
-                        size: 12,
-                      ),
-                    ],
+        return ClipRect(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // ======================================================
+              // CAMERA PREVIEW (Preserving Exact Aspect Ratio - No Distortion)
+              // ======================================================
+              Center(
+                child: FittedBox(
+                  fit: _isFullView ? BoxFit.cover : BoxFit.contain,
+                  child: SizedBox(
+                    width: previewWidth,
+                    height: previewHeight,
+                    child: CameraPreview(_controller!),
                   ),
                 ),
               ),
-            ),
-          ),
-        ),
 
-        // ======================================================
-        // SHUTTER EFFECT
-        // ======================================================
-        if (_showShutterEffect)
-          AnimatedOpacity(
-            opacity: _showShutterEffect ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 100),
-            child: Container(color: Colors.white),
+              // ======================================================
+              // DARK OVERLAY
+              // ======================================================
+              Container(color: Colors.black.withValues(alpha: 0.25)),
+
+              // ======================================================
+              // SCANNER FRAME
+              // ======================================================
+              Center(child: _buildScannerFrame()),
+
+              // ======================================================
+              // AI AUTO SCAN BUTTON
+              // ======================================================
+              Positioned(
+                top: 14,
+                left: 16,
+                right: 16,
+                child: Center(
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: _isOpeningAiScanner
+                          ? null
+                          : _startGoogleDocumentScanner,
+                      borderRadius: BorderRadius.circular(24),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 9,
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF5046E5), Color(0xFF7C3AED)],
+                          ),
+                          borderRadius: BorderRadius.circular(24),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF5046E5).withValues(alpha: 0.5),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.auto_awesome,
+                              color: Color(0xFF58F5B0),
+                              size: 18,
+                            ),
+
+                            const SizedBox(width: 8),
+
+                            Text(
+                              _isOpeningAiScanner
+                                  ? 'Opening Scanner...'
+                                  : 'AI Auto-Capture & Auto-Crop',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+
+                            const SizedBox(width: 6),
+
+                            const Icon(
+                              Icons.arrow_forward_ios,
+                              color: Colors.white70,
+                              size: 12,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // ======================================================
+              // SHUTTER EFFECT
+              // ======================================================
+              if (_showShutterEffect)
+                AnimatedOpacity(
+                  opacity: _showShutterEffect ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 100),
+                  child: Container(color: Colors.white),
+                ),
+            ],
           ),
-      ],
+        );
+      },
     );
   }
 
@@ -919,6 +959,28 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
                 onTap: _toggleLeveler,
               ),
 
+              // FIT / FILL (Real Size)
+              _smallOption(
+                _isFullView ? 'Fill' : 'Fit Real',
+                _isFullView ? Icons.crop_free : Icons.fit_screen,
+                isActive: !_isFullView,
+                onTap: () {
+                  setState(() {
+                    _isFullView = !_isFullView;
+                  });
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        _isFullView
+                            ? 'Fill View: Edge-to-edge camera feed'
+                            : 'Fit Real: Full 100% camera sensor frame',
+                      ),
+                      duration: const Duration(milliseconds: 900),
+                    ),
+                  );
+                },
+              ),
+
               // OCR
               _smallOption(
                 'OCR',
@@ -942,6 +1004,7 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
                   Icons.layers,
                   isActive: true,
                   onTap: _openBatchPreview,
+                  onLongPress: _clearBatch,
                 ),
             ],
           ),
@@ -1002,9 +1065,11 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
     IconData icon, {
     bool isActive = false,
     VoidCallback? onTap,
+    VoidCallback? onLongPress,
   }) {
     return GestureDetector(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
