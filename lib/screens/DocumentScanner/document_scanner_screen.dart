@@ -49,7 +49,11 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _initializeAvailableCameras();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _startGoogleDocumentScanner();
+      }
+    });
   }
 
   // ============================================================
@@ -180,15 +184,6 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
       _disposeCamera();
-    } else if (state == AppLifecycleState.resumed) {
-      if (_isOpeningAiScanner || _isCapturing) {
-        return;
-      }
-      if (_cameras.isNotEmpty) {
-        _startControllerWithCamera(_cameras[_selectedCameraIndex]);
-      } else {
-        _initializeAvailableCameras();
-      }
     }
   }
 
@@ -552,19 +547,24 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
               ),
             ),
           );
+          if (mounted) {
+            Navigator.pop(context);
+          }
         }
+      } else if (mounted) {
+        Navigator.pop(context);
       }
     } catch (e) {
       debugPrint('ML Kit scanner error: $e');
+      if (mounted) {
+        Navigator.pop(context);
+      }
     } finally {
       documentScanner.close();
       if (mounted) {
         setState(() {
           _isOpeningAiScanner = false;
         });
-        if (_cameras.isNotEmpty) {
-          await _startControllerWithCamera(_cameras[_selectedCameraIndex]);
-        }
       }
     }
   }
@@ -678,14 +678,18 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen>
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Clean Camera Preview (full frame, uncropped & undistorted)
               Center(
-                child: FittedBox(
-                  fit: BoxFit.cover,
-                  child: SizedBox(
-                    width: constraints.maxWidth,
-                    height: constraints.maxWidth / controller.value.aspectRatio,
-                    child: CameraPreview(controller),
+                child: AspectRatio(
+                  aspectRatio: 3 / 4,
+                  child: ClipRect(
+                    child: FittedBox(
+                      fit: BoxFit.cover,
+                      child: SizedBox(
+                        width: constraints.maxWidth,
+                        height: constraints.maxWidth / controller.value.aspectRatio,
+                        child: CameraPreview(controller),
+                      ),
+                    ),
                   ),
                 ),
               ),
