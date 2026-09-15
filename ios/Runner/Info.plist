@@ -24,6 +24,12 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Scan documents using the camera.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Save scanned documents to your photo library.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Import documents from your photo library.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

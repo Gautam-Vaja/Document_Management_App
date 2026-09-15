@@ -4,10 +4,7 @@ class ScannerFramePainter extends CustomPainter {
   final double? scanProgress;
   final bool showGrid;
 
-  ScannerFramePainter({
-    this.scanProgress,
-    this.showGrid = false,
-  });
+  ScannerFramePainter({this.scanProgress, this.showGrid = false});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -23,10 +20,26 @@ class ScannerFramePainter extends CustomPainter {
       final oneThirdY = size.height / 3;
       final twoThirdsY = size.height * 2 / 3;
 
-      canvas.drawLine(Offset(oneThirdX, 0), Offset(oneThirdX, size.height), gridPaint);
-      canvas.drawLine(Offset(twoThirdsX, 0), Offset(twoThirdsX, size.height), gridPaint);
-      canvas.drawLine(Offset(0, oneThirdY), Offset(size.width, oneThirdY), gridPaint);
-      canvas.drawLine(Offset(0, twoThirdsY), Offset(size.width, twoThirdsY), gridPaint);
+      canvas.drawLine(
+        Offset(oneThirdX, 0),
+        Offset(oneThirdX, size.height),
+        gridPaint,
+      );
+      canvas.drawLine(
+        Offset(twoThirdsX, 0),
+        Offset(twoThirdsX, size.height),
+        gridPaint,
+      );
+      canvas.drawLine(
+        Offset(0, oneThirdY),
+        Offset(size.width, oneThirdY),
+        gridPaint,
+      );
+      canvas.drawLine(
+        Offset(0, twoThirdsY),
+        Offset(size.width, twoThirdsY),
+        gridPaint,
+      );
     }
 
     // 2. Corner brackets
@@ -43,21 +56,37 @@ class ScannerFramePainter extends CustomPainter {
     canvas.drawLine(const Offset(0, 0), const Offset(corner, 0), paint);
 
     // Top-right
-    canvas.drawLine(Offset(size.width - corner, 0), Offset(size.width, 0), paint);
+    canvas.drawLine(
+      Offset(size.width - corner, 0),
+      Offset(size.width, 0),
+      paint,
+    );
     canvas.drawLine(Offset(size.width, 0), Offset(size.width, corner), paint);
 
     // Bottom-left
-    canvas.drawLine(Offset(0, size.height - corner), Offset(0, size.height), paint);
+    canvas.drawLine(
+      Offset(0, size.height - corner),
+      Offset(0, size.height),
+      paint,
+    );
     canvas.drawLine(Offset(0, size.height), Offset(corner, size.height), paint);
 
     // Bottom-right
-    canvas.drawLine(Offset(size.width - corner, size.height), Offset(size.width, size.height), paint);
-    canvas.drawLine(Offset(size.width, size.height - corner), Offset(size.width, size.height), paint);
+    canvas.drawLine(
+      Offset(size.width - corner, size.height),
+      Offset(size.width, size.height),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(size.width, size.height - corner),
+      Offset(size.width, size.height),
+      paint,
+    );
 
     // 3. Scanning Laser Line
     if (scanProgress != null) {
       final y = size.height * scanProgress!;
-      
+
       // Laser beam gradient
       final linePaint = Paint()
         ..shader = LinearGradient(
@@ -85,12 +114,16 @@ class ScannerFramePainter extends CustomPainter {
         ).createShader(Rect.fromLTWH(0, y - 24, size.width, 24))
         ..style = PaintingStyle.fill;
 
-      canvas.drawRect(Rect.fromLTWH(10, y - 24, size.width - 20, 24), glowPaint);
+      canvas.drawRect(
+        Rect.fromLTWH(10, y - 24, size.width - 20, 24),
+        glowPaint,
+      );
     }
   }
 
   @override
   bool shouldRepaint(covariant ScannerFramePainter oldDelegate) {
-    return oldDelegate.scanProgress != scanProgress || oldDelegate.showGrid != showGrid;
+    return oldDelegate.scanProgress != scanProgress ||
+        oldDelegate.showGrid != showGrid;
   }
 }
