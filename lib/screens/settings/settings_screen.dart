@@ -5,6 +5,7 @@ import 'package:document_management_app/widgets/custom_bottom_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -18,6 +19,92 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _biometricLock = true;
   bool _hardwareEncryption = true;
   bool _autoEnhance = true;
+  String _autoLockTimeout = AppStrings.immediatelyAfterExit;
+  String _scanQuality = '${AppStrings.superHigh} ${AppStrings.dpi}';
+  String _ocrLanguage = 'English (US)';
+  String _theme = 'System / Light';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final preferences = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _biometricLock = preferences.getBool('biometric_lock') ?? true;
+      _hardwareEncryption = preferences.getBool('hardware_encryption') ?? true;
+      _autoEnhance = preferences.getBool('auto_enhance') ?? true;
+      _autoLockTimeout = preferences.getString('auto_lock_timeout') ??
+          AppStrings.immediatelyAfterExit;
+      _scanQuality = preferences.getString('scan_quality') ??
+          '${AppStrings.superHigh} ${AppStrings.dpi}';
+      _ocrLanguage = preferences.getString('ocr_language') ?? 'English (US)';
+      _theme = preferences.getString('theme') ?? 'System / Light';
+    });
+  }
+
+  Future<void> _setBoolPreference(String key, bool value) async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool(key, value);
+  }
+
+  Future<void> _showChoiceDialog({
+    required String title,
+    required String currentValue,
+    required List<String> choices,
+    required ValueChanged<String> onSelected,
+  }) async {
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: Text(title, style: GoogleFonts.nunito(fontWeight: FontWeight.bold)),
+        children: choices
+            .map(
+              (choice) => SimpleDialogOption(
+                onPressed: () => Navigator.pop(dialogContext, choice),
+                child: Row(
+                  children: [
+                    Icon(
+                      choice == currentValue
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked,
+                      color: choice == currentValue
+                          ? const Color(0xFF5046E5)
+                          : Colors.grey,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(choice),
+                  ],
+                ),
+              ),
+            )
+            .toList(),
+      ),
+    );
+    if (selected != null && mounted) onSelected(selected);
+  }
+
+  Future<void> _showHelpDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Help & Support'),
+        content: const Text(
+          'Use Scan Document to capture pages, then edit, enhance, and save them to your vault. '
+          'Use the refresh button in Database & Storage to reload your documents.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -216,12 +303,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
             secondary: const Icon(Icons.fingerprint, color: Color(0xFF5046E5)),
             activeThumbColor: const Color(0xFF5046E5),
             value: _biometricLock,
-            onChanged: (val) => setState(() => _biometricLock = val),
+            onChanged: (val) {
+              setState(() => _biometricLock = val);
+              _setBoolPreference('biometric_lock', val);
+            },
           ),
           Divider(height: 1, color: Colors.grey.shade200),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
+            child: InkWell(
+              onTap: () => _showChoiceDialog(
+                title: 'Auto-lock timeout',
+                currentValue: _autoLockTimeout,
+                choices: const ['Immediately after exit', 'After 1 minute', 'After 5 minutes', 'Never'],
+                onSelected: (value) async {
+                  setState(() => _autoLockTimeout = value);
+                  final preferences = await SharedPreferences.getInstance();
+                  await preferences.setString('auto_lock_timeout', value);
+                },
+              ),
+              child: Row(
               children: [
                 // Icon background
                 const Icon(
@@ -250,7 +351,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Expanded(
                   flex: 4,
                   child: Text(
-                    '${AppStrings.immediatelyAfterExit}\n${AppStrings.exit}',
+                    _autoLockTimeout,
                     style: GoogleFonts.nunito(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
@@ -267,6 +368,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   size: 22,
                 ),
               ],
+              ),
             ),
           ),
           Divider(height: 1, color: Colors.grey.shade200),
@@ -282,7 +384,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             secondary: const Icon(Icons.lock_outline, color: Color(0xFF5046E5)),
             activeThumbColor: const Color(0xFF5046E5),
             value: _hardwareEncryption,
-            onChanged: (val) => setState(() => _hardwareEncryption = val),
+            onChanged: (val) {
+              setState(() => _hardwareEncryption = val);
+              _setBoolPreference('hardware_encryption', val);
+            },
           ),
         ],
       ),
@@ -300,7 +405,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
+            child: InkWell(
+              onTap: () => _showChoiceDialog(
+                title: 'Default scan quality',
+                currentValue: _scanQuality,
+                choices: const ['Standard 150 DPI', 'High 200 DPI', 'Super High 300 DPI'],
+                onSelected: (value) async {
+                  setState(() => _scanQuality = value);
+                  final preferences = await SharedPreferences.getInstance();
+                  await preferences.setString('scan_quality', value);
+                },
+              ),
+              child: Row(
               children: [
                 // Icon background
                 const Icon(
@@ -329,7 +445,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Expanded(
                   flex: 4,
                   child: Text(
-                    '${AppStrings.superHigh}\n${AppStrings.dpi}',
+                    _scanQuality,
                     style: GoogleFonts.nunito(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
@@ -346,6 +462,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   size: 22,
                 ),
               ],
+              ),
             ),
           ),
           Divider(height: 1, color: Colors.grey.shade200),
@@ -364,12 +481,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             activeThumbColor: const Color(0xFF5046E5),
             value: _autoEnhance,
-            onChanged: (val) => setState(() => _autoEnhance = val),
+            onChanged: (val) {
+              setState(() => _autoEnhance = val);
+              _setBoolPreference('auto_enhance', val);
+            },
           ),
           Divider(height: 1, color: Colors.grey.shade200),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
+            child: InkWell(
+              onTap: () => _showChoiceDialog(
+                title: 'OCR language',
+                currentValue: _ocrLanguage,
+                choices: const ['English (US)', 'Hindi', 'Spanish', 'French'],
+                onSelected: (value) async {
+                  setState(() => _ocrLanguage = value);
+                  final preferences = await SharedPreferences.getInstance();
+                  await preferences.setString('ocr_language', value);
+                },
+              ),
+              child: Row(
               children: [
                 // Icon background
                 const Icon(Icons.translate, color: Color(0xFF5146E5), size: 25),
@@ -394,7 +525,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Expanded(
                   flex: 4,
                   child: Text(
-                    '${AppStrings.english}\n${AppStrings.more}',
+                    _ocrLanguage,
                     style: GoogleFonts.nunito(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
@@ -411,12 +542,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   size: 22,
                 ),
               ],
+              ),
             ),
           ),
           Divider(height: 1, color: Colors.grey.shade200),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
+            child: InkWell(
+              onTap: () => _showChoiceDialog(
+                title: 'Theme',
+                currentValue: _theme,
+                choices: const ['System / Light', 'Light', 'Dark'],
+                onSelected: (value) async {
+                  setState(() => _theme = value);
+                  final preferences = await SharedPreferences.getInstance();
+                  await preferences.setString('theme', value);
+                },
+              ),
+              child: Row(
               children: [
                 // Icon background
                 const Icon(
@@ -445,7 +588,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Expanded(
                   flex: 4,
                   child: Text(
-                    AppStrings.systemLight,
+                    _theme,
                     style: GoogleFonts.nunito(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
@@ -462,6 +605,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   size: 22,
                 ),
               ],
+              ),
             ),
           ),
         ],
@@ -508,7 +652,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             leading: const Icon(Icons.help_outline, color: Color(0xFF5046E5)),
             trailing: const Icon(Icons.chevron_right, color: Colors.grey),
-            onTap: () {},
+            onTap: _showHelpDialog,
           ),
         ],
       ),
